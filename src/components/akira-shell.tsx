@@ -29,6 +29,21 @@ import { SystemSettingsPanel } from "@/components/system-settings-panel";
 import { ProfileSheet } from "@/components/profile-sheet";
 import { fetchApprovals } from "@/lib/api";
 
+const ADMIN_CARD_IDS = new Set(["approvals", "system-settings"]);
+const guestPortalUser: PortalUser = {
+  username: "visitor",
+  displayName: "访客模式",
+  role: "user",
+  avatarUrl: "",
+  signature: "登录后即可解锁个性化数据与操作。",
+  metricSummary: {
+    entries: 0,
+    uptime: "--",
+    invites: 0,
+  },
+  tags: [],
+};
+
 export function AkiraShell({
   cards: initialCards = portalCards,
   user = portalUser,
@@ -36,6 +51,53 @@ export function AkiraShell({
   cards?: PortalCard[];
   user?: PortalUser;
 }) {
+  // 注入自定义动画样式
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      @keyframes float-particle {
+        0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
+        20% { opacity: 1; }
+        100% { transform: translate(var(--tx), var(--ty)) scale(var(--s)) rotate(var(--r)); opacity: 0; }
+      }
+      .animate-float-particle {
+        animation: float-particle var(--d) cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes pulse-glow {
+        0%, 100% { opacity: 0.4; transform: scale(1); filter: brightness(1); }
+        50% { opacity: 0.8; transform: scale(1.05); filter: brightness(1.3); }
+      }
+      @keyframes gradient-flow {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      @keyframes spin-slow {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      /* 自定义滚动条 - 柔和化处理 */
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 9999px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background-color: rgba(255, 255, 255, 0.2);
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
   const [cards, setCards] = useState<PortalCard[]>(initialCards);
   const [activeCard, setActiveCard] = useState<PortalCard | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -51,7 +113,7 @@ export function AkiraShell({
     try {
       const pending = await fetchApprovals({ status: "pending" });
       const count = pending.length;
-      
+
       return currentCards.map(card => {
         if (card.id === "approvals") {
           return {
@@ -70,6 +132,27 @@ export function AkiraShell({
   const refreshCards = useCallback(async () => {
     try {
       let fetchedCards = await fetchCards();
+
+      // 智能合并：保留 Mock 数据中的丰富视觉元素和指标，防止 API 数据缺失导致 UI 塌陷
+      fetchedCards = fetchedCards.map(fetchedCard => {
+        const mockCard = initialCards.find(c => c.id === fetchedCard.id);
+        if (!mockCard) return fetchedCard;
+
+        return {
+          ...fetchedCard,
+          // 如果 API 没有返回指标数据，回退使用 Mock 数据
+          metrics: (fetchedCard.metrics && fetchedCard.metrics.length > 0)
+            ? fetchedCard.metrics
+            : mockCard.metrics,
+          // 保持视觉风格一致
+          glow: fetchedCard.glow || mockCard.glow,
+          accent: fetchedCard.accent || mockCard.accent,
+          type: fetchedCard.type || mockCard.type,
+          // 如果 API 描述为空，使用 Mock 描述
+          description: fetchedCard.description || mockCard.description,
+        };
+      });
+
       if (sessionUser?.role === 1) {
         fetchedCards = await refreshApprovalsBadge(fetchedCards);
       }
@@ -77,7 +160,7 @@ export function AkiraShell({
     } catch (error) {
       console.error("Failed to fetch cards:", error);
     }
-  }, [sessionUser, refreshApprovalsBadge]);
+  }, [sessionUser, refreshApprovalsBadge, initialCards]);
 
   useEffect(() => {
     refreshCards();
@@ -89,7 +172,7 @@ export function AkiraShell({
     try {
       const pending = await fetchApprovals({ status: "pending" });
       const count = pending.length;
-      
+
       setCards(prev => prev.map(card => {
         if (card.id === "approvals") {
           return {
@@ -109,10 +192,8 @@ export function AkiraShell({
 
   const resolvedUser = useMemo<PortalUser>(() => {
     if (!sessionUser) {
-      return {
-        ...user,
-        role: "user",
-      };
+      // 未登录时显示默认 Mock 数据以保持 UI 丰富度（标签、指标等）
+      return user;
     }
     return {
       ...user,
@@ -124,10 +205,16 @@ export function AkiraShell({
     };
   }, [sessionUser, user]);
 
-  const handleCardClick = useCallback((card: PortalCard) => {
-    setActiveCard(card);
-    setPanelOpen(true);
-  }, []);
+  const handleCardClick = useCallback(
+    (card: PortalCard) => {
+      if (card.adminOnly && resolvedUser.role !== "admin") {
+        return;
+      }
+      setActiveCard(card);
+      setPanelOpen(true);
+    },
+    [resolvedUser.role]
+  );
 
   const handleNavigate = useCallback((item: NavItem) => {
     setMobileSidebarOpen(false);
@@ -152,16 +239,23 @@ export function AkiraShell({
   const activeInsight: CardInsight | undefined = activeCard
     ? cardInsights[activeCard.id]
     : undefined;
+  const visibleCards = useMemo(() => {
+    if (resolvedUser.role === "admin") return cards;
+    return cards.filter(
+      (card) => !card.adminOnly && !ADMIN_CARD_IDS.has(card.id ?? "")
+    );
+  }, [cards, resolvedUser.role]);
 
   return (
-    <div 
-      className="relative min-h-screen overflow-hidden bg-[#01040e] text-white"
+    <div
+      className="relative min-h-screen overflow-hidden bg-slate-900 text-white selection:bg-pink-500/30"
       suppressHydrationWarning
     >
       <AnimatedBackground />
       <div className="relative z-10 flex h-screen">
         <Sidebar
           user={resolvedUser}
+          isAuthenticated={Boolean(sessionUser)}
           hasPending={hasPending}
           onNavigate={handleNavigate}
           open={mobileSidebarOpen}
@@ -179,11 +273,11 @@ export function AkiraShell({
             canCreateCard={Boolean(canManageCards)}
             onOpenProfile={() => setProfileOpen(true)}
           />
-          <main className="relative flex-1 overflow-hidden px-4 pb-10 pt-4 sm:px-6 lg:px-10">
+          <main className="relative flex-1 overflow-hidden px-4 pb-10 pt-6 sm:px-8 lg:px-12">
             <ScrollArea className="h-full">
-              <div className="space-y-6 pb-20">
+              <div className="space-y-12 pb-32">
                 <Hero user={resolvedUser} />
-                <CardGrid cards={cards} onSelect={handleCardClick} user={resolvedUser} />
+                <CardGrid cards={visibleCards} onSelect={handleCardClick} user={resolvedUser} />
               </div>
             </ScrollArea>
             <SlidingPanel
@@ -213,47 +307,88 @@ export function AkiraShell({
 
 function AnimatedBackground() {
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="absolute inset-0 bg-[#050816]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(14,165,233,0.25),transparent)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_10%,rgba(236,72,153,0.2),transparent)]" />
-      <div className="absolute -top-24 left-1/2 h-[120%] w-[120%] -translate-x-1/2 animate-[spin_60s_linear_infinite] rounded-full bg-gradient-to-r from-cyan-500/10 via-fuchsia-500/5 to-emerald-500/10 blur-3xl" />
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/asfalt-dark.png')] opacity-30 mix-blend-screen" />
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/20 to-black/80" />
+    <div className="pointer-events-none absolute inset-0 overflow-hidden bg-[#1a1b26]">
+      {/* 1. 动漫风渐变基底 - 梦幻晚霞/新海诚风格 */}
+      <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 animate-gradient-flow bg-[length:400%_400%] opacity-80" />
+
+      {/* 叠加一层暖色滤镜，增加温馨感 */}
+      <div className="absolute inset-0 bg-gradient-to-t from-orange-300/30 via-transparent to-blue-400/30 mix-blend-overlay" />
+
+      {/* 2. 柔和网格 - 减弱科技感，增加装饰感 */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff15_1px,transparent_1px),linear-gradient(to_bottom,#ffffff15_1px,transparent_1px)] bg-[size:60px_60px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
+
+      {/* 3. 梦幻光斑 - 使用高亮暖色 */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-[70%] h-[70%] rounded-full bg-pink-400/40 blur-[100px] mix-blend-screen animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[70%] h-[70%] rounded-full bg-orange-300/40 blur-[100px] mix-blend-screen animate-pulse delay-1000" />
+        <div className="absolute top-[40%] left-[40%] w-[60%] h-[60%] rounded-full bg-violet-400/30 blur-[120px] mix-blend-screen animate-pulse delay-2000" />
+      </div>
+
+      {/* 4. 粒子系统 - 樱花/光尘风格 */}
+      <div className="absolute inset-0">
+        {[...Array(25)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute rounded-full bg-white/80 blur-[0.5px] animate-float-particle"
+            style={{
+              top: `${Math.random() * 100}%`,
+              left: `${Math.random() * 100}%`,
+              width: `${Math.random() * 4 + 2}px`,
+              height: `${Math.random() * 4 + 2}px`,
+              '--tx': `${Math.random() * 200 - 100}px`,
+              '--ty': `-${Math.random() * 200 + 50}px`,
+              '--r': `${Math.random() * 360}deg`,
+              '--s': `${Math.random() * 0.5 + 0.5}`,
+              '--d': `${Math.random() * 10 + 10}s`, // 更慢、更优雅的漂浮
+              boxShadow: `0 0 ${Math.random() * 10 + 5}px rgba(255,255,255,0.8)`
+            } as React.CSSProperties}
+          />
+        ))}
+      </div>
+
+      {/* 5. 极光流线 - 改为柔和的光晕 */}
+      <div className="absolute -top-[50%] left-[50%] h-[200%] w-[200%] -translate-x-1/2 animate-[spin_120s_linear_infinite] rounded-[40%] bg-gradient-to-b from-transparent via-white/10 to-transparent blur-3xl opacity-50" />
+
+      {/* 6. 噪点纹理 - 减少不透明度，更干净 */}
+      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-10 mix-blend-overlay" />
     </div>
   );
 }
 
 function Sidebar({
   user,
+  isAuthenticated,
   hasPending,
   onNavigate,
   open,
   onOpenChange,
 }: {
   user: PortalUser;
+  isAuthenticated: boolean;
   hasPending: boolean;
   onNavigate: (item: NavItem) => void;
   open: boolean;
   onOpenChange: (value: boolean) => void;
 }) {
+  const roleLabel = user.role === "admin" ? "管理员" : isAuthenticated ? "普通用户" : "访客";
+
   const sidebarContent = (
-    <div className="flex h-full flex-col gap-4 border-r border-white/5 bg-black/30 px-4 py-6 backdrop-blur-xl">
+    <div className="flex h-full flex-col gap-6 border-r border-white/20 bg-white/5 px-6 py-8 backdrop-blur-2xl shadow-[5px_0_30px_rgba(0,0,0,0.05)]">
       <div>
-        <p className="text-xs uppercase tracking-[0.32em] text-white/60">akira</p>
-        <p className="text-lg font-semibold tracking-[0.34em] text-white">私人主控</p>
+        <p className="text-xs uppercase tracking-[0.32em] text-white/70 drop-shadow-sm">akira</p>
+        <p className="text-lg font-bold tracking-[0.34em] text-white drop-shadow-md">私人主控</p>
       </div>
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <p className="text-sm text-white/60">身份</p>
-        <p className="text-xl font-semibold text-white">{user.displayName}</p>
-        <p className="text-xs uppercase tracking-[0.24em] text-emerald-300/80">
-          {user.role === "admin" ? "管理员" : "普通用户"}
+      <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-md shadow-sm">
+        <p className="text-sm text-white/70">身份</p>
+        <p className="text-xl font-bold text-white drop-shadow-sm">{user.displayName}</p>
+        <p className="text-xs uppercase tracking-[0.24em] text-emerald-300 font-medium drop-shadow-sm">
+          {roleLabel}
         </p>
       </div>
       <nav className="flex-1 space-y-6">
         {navSections.map((section) => (
           <div key={section.id}>
-            <p className="mb-2 text-xs uppercase tracking-[0.32em] text-white/40">
+            <p className="mb-2 text-xs uppercase tracking-[0.32em] text-white/50 font-bold">
               {section.title}
             </p>
             <div className="space-y-2">
@@ -263,24 +398,24 @@ function Sidebar({
                   <button
                     key={item.id}
                     onClick={() => onNavigate(item)}
-                    className="group flex w-full items-center justify-between rounded-2xl border border-transparent bg-white/5 px-3 py-2 text-left transition hover:border-white/30"
+                    className="group flex w-full items-center justify-between rounded-2xl border border-transparent bg-white/5 px-3 py-2 text-left transition hover:border-white/30 hover:bg-white/10 hover:shadow-sm"
                   >
-                    <span className="flex items-center gap-3 text-sm font-medium text-white/80">
-                      <item.icon className="h-4 w-4 text-white/60 transition group-hover:text-white" />
+                    <span className="flex items-center gap-3 text-sm font-medium text-white/90 group-hover:text-white">
+                      <item.icon className="h-4 w-4 text-white/70 transition group-hover:text-white group-hover:scale-110" />
                       {item.label}
                     </span>
                     {item.id === "audit" && hasPending && (
-                      <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                      <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.6)]" />
                     )}
                   </button>
-              ))}
+                ))}
             </div>
           </div>
         ))}
       </nav>
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <p className="text-xs uppercase tracking-[0.32em] text-white/60">系统 Uptime</p>
-        <p className="text-2xl font-semibold text-emerald-300">{user.metricSummary.uptime}</p>
+      <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-md shadow-sm">
+        <p className="text-xs uppercase tracking-[0.32em] text-white/70">系统 Uptime</p>
+        <p className="text-2xl font-bold text-emerald-300 drop-shadow-sm">{user.metricSummary.uptime}</p>
       </div>
     </div>
   );
@@ -291,7 +426,7 @@ function Sidebar({
         <div className="sticky top-0 h-screen overflow-y-auto">{sidebarContent}</div>
       </div>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="left" className="w-72 border-white/10 bg-[#050916]/95 p-0">
+        <SheetContent side="left" className="w-72 border-white/20 bg-slate-900/80 backdrop-blur-xl p-0">
           <div className="max-h-screen overflow-y-auto">{sidebarContent}</div>
         </SheetContent>
       </Sheet>
@@ -321,30 +456,30 @@ function TopBar({
   onOpenProfile: () => void;
 }) {
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/5 bg-black/40 px-4 py-4 backdrop-blur-2xl lg:px-10">
+    <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/20 bg-white/5 px-6 py-5 backdrop-blur-xl lg:px-10 shadow-sm">
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
           size="icon"
-          className="text-white hover:bg-white/10 lg:hidden"
+          className="text-white hover:bg-white/20 lg:hidden"
           onClick={onMenuClick}
         >
           <Menu className="h-5 w-5" />
         </Button>
         <div>
-          <p className="text-[10px] uppercase tracking-[0.4em] text-cyan-300/80">
+          <p className="text-[10px] uppercase tracking-[0.4em] text-cyan-300 font-bold drop-shadow-sm">
             personal portal
           </p>
-          <p className="text-xl font-semibold">AKIRA // PRIVATE</p>
+          <p className="text-xl font-black tracking-wide drop-shadow-md">AKIRA // PRIVATE</p>
         </div>
       </div>
       <div className="flex items-center gap-3">
         {hasPending && (
-          <Badge className="bg-red-500/80 text-[11px] uppercase tracking-wide">待审核</Badge>
+          <Badge className="bg-rose-500 text-[11px] uppercase tracking-wide shadow-md border-none animate-pulse">待审核</Badge>
         )}
         {canCreateCard && (
-          <Button className="gap-2 bg-white/10 text-white hover:bg-white/20">
-            <Sparkles className="h-4 w-4" />
+          <Button className="gap-2 bg-white/10 text-white hover:bg-white/20 border border-white/20 shadow-sm backdrop-blur-md">
+            <Sparkles className="h-4 w-4 text-yellow-300" />
             新建卡片
           </Button>
         )}
@@ -377,6 +512,7 @@ function UserMenu({
   onOpenProfile: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const roleLabel = user.role === "admin" ? "管理员" : isAuthenticated ? "普通用户" : "访客";
 
   const handleToggle = () => setOpen((prev) => !prev);
 
@@ -411,7 +547,7 @@ function UserMenu({
         <div className="hidden sm:flex flex-col leading-tight">
           <span className="text-sm font-medium">{user.displayName}</span>
           <span className="text-xs text-white/50">
-            {user.role === "admin" ? "管理员" : "访客"}
+            {roleLabel}
           </span>
         </div>
       </button>
@@ -454,14 +590,14 @@ function UserMenu({
 
 function Hero({ user }: { user: PortalUser }) {
   return (
-    <section className="rounded-[32px] border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
+    <section className="rounded-[32px] border border-white/30 bg-white/10 p-8 backdrop-blur-2xl shadow-lg">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.4em] text-white/50">主控台</p>
-          <h1 className="mt-2 text-3xl font-semibold text-white">
+          <p className="text-xs uppercase tracking-[0.4em] text-white/70 font-bold drop-shadow-sm">主控台</p>
+          <h1 className="mt-2 text-4xl font-black text-white drop-shadow-lg">
             欢迎回来，{user.displayName}
           </h1>
-          <p className="mt-3 max-w-2xl text-sm text-white/70">{user.signature}</p>
+          <p className="mt-3 max-w-2xl text-base text-white/90 font-medium drop-shadow-sm">{user.signature}</p>
         </div>
         <div className="flex gap-4">
           <MetricBlock label="日记数量" value={`${user.metricSummary.entries}`} />
@@ -469,12 +605,12 @@ function Hero({ user }: { user: PortalUser }) {
           <MetricBlock label="邀请名额" value={`${user.metricSummary.invites}`} />
         </div>
       </div>
-      <Separator className="my-6 border-white/10" />
+      <Separator className="my-6 border-white/20" />
       <div className="flex flex-wrap gap-3">
         {user.tags.map((tag) => (
-          <Badge key={tag.label} variant="secondary" className="bg-white/10 text-white">
+          <Badge key={tag.label} variant="secondary" className="bg-white/20 text-white border border-white/20 hover:bg-white/30 transition-colors shadow-sm">
             {tag.label}
-            <span className="ml-2 text-xs text-cyan-300">+{tag.likes}</span>
+            <span className="ml-2 text-xs text-cyan-300 font-bold">+{tag.likes}</span>
           </Badge>
         ))}
       </div>
@@ -484,9 +620,9 @@ function Hero({ user }: { user: PortalUser }) {
 
 function MetricBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-[#050916]/80 px-5 py-3 text-center">
-      <p className="text-xs uppercase tracking-[0.4em] text-white/50">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+    <div className="rounded-2xl border border-white/20 bg-white/10 px-6 py-4 text-center backdrop-blur-md shadow-sm hover:bg-white/20 transition-colors">
+      <p className="text-xs uppercase tracking-[0.4em] text-white/60 font-bold">{label}</p>
+      <p className="mt-2 text-3xl font-black text-white drop-shadow-md">{value}</p>
     </div>
   );
 }
@@ -501,7 +637,7 @@ function CardGrid({
   user: PortalUser;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-8">
       {cards
         .filter((card) => (card.adminOnly ? user.role === "admin" : true))
         .map((card) => (
@@ -510,42 +646,140 @@ function CardGrid({
             id={`card-${card.id}`}
             onClick={() => onSelect(card)}
             className={cn(
-              "group w-full rounded-[28px] border border-white/10 bg-gradient-to-br p-[1px] text-left",
+              "group relative w-full overflow-hidden rounded-[32px] p-[2px] text-left transition-all duration-500 hover:shadow-[0_10px_40px_-10px_rgba(255,255,255,0.4)] hover:scale-[1.02]",
               card.glow
             )}
           >
-            <div
-              className={cn(
-                "rounded-[26px] bg-black/50 p-5 transition-transform duration-300 group-hover:-translate-y-1 group-hover:bg-black/40",
+            {/* 1. 边框：使用高亮白色半透明，营造动漫描边感 */}
+            <div className="absolute inset-0 bg-gradient-to-br from-white/60 via-white/20 to-white/60 opacity-80" />
+
+            {/* 2. 基础背景层：高透亮色玻璃态 (Frosted Glass) */}
+            <div className="absolute inset-[2px] rounded-[30px] bg-white/10 backdrop-blur-xl border border-white/20 shadow-inner" />
+
+            {/* 3. 内部内容容器 */}
+            <div className="relative h-full w-full rounded-[30px] overflow-hidden">
+
+              {/* 3.1 氛围光效：更柔和、更明亮 */}
+              <div className={cn(
+                "absolute -left-20 -top-20 h-[500px] w-[500px] rounded-full opacity-40 blur-[80px] mix-blend-screen transition-all duration-700 group-hover:opacity-60",
                 `bg-gradient-to-br ${card.accent}`
+              )} />
+
+              {/* 3.2 辅助光效 */}
+              <div className={cn(
+                "absolute -right-20 -bottom-20 h-[400px] w-[400px] rounded-full opacity-30 blur-[60px] mix-blend-screen transition-all duration-700 group-hover:opacity-50",
+                `bg-gradient-to-tl ${card.accent}`
+              )} />
+
+              {/* 3.3 顶部高光：增强玻璃质感 */}
+              <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80" />
+
+              {/* 3.4 动漫风斜纹装饰 (可选，这里用微弱的噪点代替) */}
+              <div className="absolute inset-0 bg-white/5 mix-blend-overlay" />
+
+              {/* 3.5 专属图案动画层 */}
+              {card.id === 'life-journal' && (
+                <>
+                  {/* 静态大爱心 - 增加发光 */}
+                  <div className="absolute right-8 bottom-8 opacity-10 transition-all duration-500 group-hover:scale-110 group-hover:opacity-20 group-hover:drop-shadow-[0_0_30px_rgba(244,63,94,0.6)]">
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="h-56 w-56 text-rose-500">
+                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                    </svg>
+                  </div>
+                  {/* 动态四散爱心粒子 - 增加数量和随机性 */}
+                  <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                    {[...Array(20)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="absolute text-rose-400 opacity-0 group-hover:animate-float-particle"
+                        style={{
+                          left: `${50 + (Math.random() * 60 - 30)}%`,
+                          bottom: '20%',
+                          fontSize: `${Math.random() * 24 + 12}px`,
+                          color: i % 3 === 0 ? '#fb7185' : i % 3 === 1 ? '#f43f5e' : '#e11d48', // rose-400, rose-500, rose-600
+                          '--tx': `${Math.random() * 200 - 100}px`,
+                          '--ty': `-${Math.random() * 150 + 50}px`,
+                          '--r': `${Math.random() * 360}deg`,
+                          '--s': `${Math.random() * 0.5 + 0.8}`,
+                          '--d': `${Math.random() * 2 + 1.5}s`,
+                          animationDelay: `${Math.random() * 0.5}s`,
+                        } as React.CSSProperties}
+                      >
+                        ❤️
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm uppercase tracking-[0.3em] text-white/70">{card.type}</p>
+
+              {card.id === 'approvals' && (
+                <div className="absolute right-10 bottom-10 opacity-5 transition-all duration-500 group-hover:opacity-15 group-hover:rotate-12 group-hover:drop-shadow-[0_0_20px_rgba(6,182,212,0.5)]">
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="h-56 w-56 text-cyan-500">
+                    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" />
+                  </svg>
+                </div>
+              )}
+
+              {card.id === 'system-settings' && (
+                <div className="absolute right-10 bottom-10 opacity-5 transition-all duration-700 group-hover:opacity-15 group-hover:rotate-90 group-hover:drop-shadow-[0_0_20px_rgba(148,163,184,0.5)]">
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="h-56 w-56 text-slate-400">
+                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.58 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+                  </svg>
+                </div>
+              )}
+
+              {/* 3.6 内容布局 */}
+              <div className="relative flex flex-col gap-6 p-8 lg:flex-row lg:items-center lg:justify-between z-10">
+
+                {/* 左侧信息 */}
+                <div className="flex-1 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className={cn("h-2 w-2 rounded-full shadow-[0_0_8px_currentColor]", card.id === 'approvals' ? 'text-rose-400 bg-rose-400' : 'text-cyan-300 bg-cyan-300')} />
+                    <p className="text-xs font-bold uppercase tracking-[0.25em] text-white/70 drop-shadow-sm">{card.type}</p>
                     {card.badge && (
-                      <Badge className="bg-black/60 text-[11px] uppercase tracking-tight text-white">
+                      <Badge variant="outline" className="border-white/30 bg-white/20 text-[10px] uppercase tracking-wider text-white backdrop-blur-md shadow-sm">
                         {card.badge}
                       </Badge>
                     )}
                   </div>
-                  <h3 className="mt-3 text-2xl font-semibold text-white">{card.title}</h3>
-                  <p className="mt-2 text-sm text-white/80">{card.description}</p>
+
+                  <div>
+                    <h3 className="text-3xl font-black tracking-tight text-white drop-shadow-md transition-all group-hover:scale-[1.02] group-hover:text-white">
+                      {card.title}
+                    </h3>
+                    <p className="mt-2 max-w-2xl text-base font-medium leading-relaxed text-white/80 drop-shadow-sm transition-colors group-hover:text-white">
+                      {card.description}
+                    </p>
+                  </div>
                 </div>
+
+                {/* 右侧指标 */}
                 {card.metrics.length > 0 && (
-                  <div className="flex flex-wrap gap-4">
+                  <div className="flex flex-wrap gap-3 lg:justify-end">
                     {card.metrics.map((metric) => (
                       <div
                         key={metric.label}
-                        className="min-w-[140px] rounded-2xl border border-white/20 bg-black/20 px-4 py-2 text-sm text-white/80"
+                        className="group/metric relative min-w-[160px] overflow-hidden rounded-2xl border border-white/20 bg-white/10 px-5 py-4 transition-all hover:border-white/40 hover:bg-white/20 shadow-sm backdrop-blur-sm"
                       >
-                        <p className="text-xs uppercase tracking-[0.3em] text-white/60">{metric.label}</p>
-                        <p className="text-lg font-semibold text-white">{metric.value}</p>
+                        <div className="relative z-10">
+                          <p className="text-[10px] uppercase tracking-[0.2em] text-white/60 font-bold transition-colors group-hover/metric:text-white/80">
+                            {metric.label}
+                          </p>
+                          <p className="mt-1 text-2xl font-bold text-white drop-shadow-md">
+                            {metric.value}
+                          </p>
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
+
+                {/* 装饰性箭头 */}
+                <div className="absolute right-8 top-8 opacity-0 transition-all duration-300 group-hover:translate-x-1 group-hover:opacity-100 lg:static lg:opacity-100 lg:group-hover:translate-x-2">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-white/20">
+                    <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
               </div>
             </div>
           </button>
@@ -574,79 +808,94 @@ function SlidingPanel({
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-y-0 right-0 flex w-full transition duration-500 ease-out",
+        "pointer-events-none fixed bottom-0 right-0 left-0 top-20 flex justify-end transition duration-500 ease-out z-50 lg:left-72",
         open ? "translate-x-0" : "translate-x-full"
       )}
     >
-      <div className="pointer-events-auto flex h-full w-full flex-col border-l border-white/10 bg-[#01040e]/95 p-6 shadow-[0_0_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-white/50">模块细节</p>
-            <h2 className="text-2xl font-semibold text-white">
+      <div className="pointer-events-auto relative h-full w-full max-w-[1300px] shadow-[-20px_0_50px_rgba(0,0,0,0.3)] backdrop-blur-3xl overflow-hidden">
+        {/* 左侧渐变光效边框 - 极细且柔和，消除切割感 */}
+        <div className="absolute left-0 top-20 bottom-20 w-[1px] bg-gradient-to-b from-transparent via-white/10 to-transparent z-30 opacity-70" />
+
+        {/* 左边缘柔光 - 扩大范围，营造光晕融合感 */}
+        <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-white/10 to-transparent z-20 pointer-events-none mix-blend-overlay" />
+
+        {/* 背景层 - 使用与主页呼应的深色渐变，但透明度较低以遮挡主页内容 */}
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-950/95 via-purple-950/95 to-slate-950/95" />
+
+        {/* 装饰光斑 - 增加层次感 */}
+        <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-purple-500/10 blur-[100px] pointer-events-none" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-indigo-500/10 blur-[80px] pointer-events-none" />
+
+        {/* 悬浮关闭按钮 - 固定在右上角，不随内容滚动 */}
+        <Button
+          variant="ghost"
+          className="absolute right-6 top-6 z-20 text-white/50 hover:bg-white/10 hover:text-white rounded-full h-10 w-10 p-0 backdrop-blur-md transition-colors"
+          onClick={onClose}
+        >
+          <X className="h-6 w-6" />
+        </Button>
+
+        {/* 统一滚动容器 - 标题和内容一起滚动 */}
+        <div className="relative h-full w-full overflow-y-auto p-6 custom-scrollbar z-10">
+          <div className="mb-8 pr-12 border-b border-white/10 pb-6">
+            <p className="text-xs uppercase tracking-[0.4em] text-white/60 font-bold">模块细节</p>
+            <h2 className="text-3xl font-black text-white drop-shadow-md mt-2">
               {activeCard?.title ?? "选择一个卡片"}
             </h2>
-            <p className="text-sm text-white/70">{activeCard?.description}</p>
+            <p className="text-sm text-white/80 font-medium mt-2 leading-relaxed">{activeCard?.description}</p>
           </div>
-          <Button variant="ghost" className="text-white/70 hover:bg-white/10" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-        {activeCard?.id === "life-journal" ? (
-          <div className="flex-1 overflow-y-auto">
+
+          {activeCard?.id === "life-journal" ? (
             <JournalFeed />
-          </div>
-        ) : activeCard?.id === "approvals" ? (
-          <div className="flex-1 overflow-y-auto">
+          ) : activeCard?.id === "approvals" ? (
             <ApprovalsPanel onUpdate={onApprovalsUpdate} />
-          </div>
-        ) : activeCard?.id === "system-settings" ? (
-          <div className="flex-1 overflow-y-auto">
+          ) : activeCard?.id === "system-settings" ? (
             <SystemSettingsPanel onUpdate={onCardsUpdate} />
-          </div>
-        ) : activeCard && insight ? (
-          <div className="space-y-6 overflow-y-auto pr-2">
-            <Section title="设计摘要">
-              <p className="text-sm leading-relaxed text-white/80">{insight.summary}</p>
-            </Section>
-            {insight.recentEntries && (
-              <Section title="最近动态">
-                <div className="space-y-3">
-                  {insight.recentEntries.map((entry) => (
-                    <Card key={entry.id} className="border-white/10 bg-white/5 p-4 text-white/80">
-                      <p className="text-sm uppercase tracking-[0.3em] text-white/60">{entry.timestamp}</p>
-                      <h4 className="mt-1 text-lg font-semibold text-white">{entry.title}</h4>
-                      <p className="mt-1 text-sm">{entry.excerpt}</p>
-                    </Card>
-                ))}
-                </div>
+          ) : activeCard && insight ? (
+            <div className="space-y-8 pb-10">
+              <Section title="设计摘要">
+                <p className="text-base leading-relaxed text-white/90 font-medium">{insight.summary}</p>
               </Section>
-            )}
-            <Section title="亮点">
-              <ul className="space-y-2 text-sm text-white/80">
-                {insight.highlights.map((highlight) => (
-                  <li key={highlight} className="relative pl-4">
-                    <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-cyan-300" />
-                    {highlight}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-            <Section title="下一步">
-              <ul className="space-y-2 text-sm text-white/80">
-                {insight.todos.map((todo) => (
-                  <li key={todo} className="relative pl-4">
-                    <span className="absolute left-0 top-2 h-1 w-1 rounded-full bg-fuchsia-300" />
-                    {todo}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          </div>
-        ) : (
-          <div className="flex flex-1 items-center justify-center text-sm text-white/60">
-            选择任意卡片以查看细节
-          </div>
-        )}
+              {insight.recentEntries && (
+                <Section title="最近动态">
+                  <div className="space-y-4">
+                    {insight.recentEntries.map((entry) => (
+                      <Card key={entry.id} className="border-white/20 bg-white/10 p-5 text-white/90 backdrop-blur-md shadow-sm hover:bg-white/15 transition-colors">
+                        <p className="text-xs uppercase tracking-[0.3em] text-white/60 font-bold">{entry.timestamp}</p>
+                        <h4 className="mt-2 text-xl font-bold text-white">{entry.title}</h4>
+                        <p className="mt-2 text-sm leading-relaxed">{entry.excerpt}</p>
+                      </Card>
+                    ))}
+                  </div>
+                </Section>
+              )}
+              <Section title="亮点">
+                <ul className="space-y-3 text-sm text-white/90 font-medium">
+                  {insight.highlights.map((highlight) => (
+                    <li key={highlight} className="relative pl-6 flex items-center">
+                      <span className="absolute left-0 h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]" />
+                      {highlight}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+              <Section title="下一步">
+                <ul className="space-y-3 text-sm text-white/90 font-medium">
+                  {insight.todos.map((todo) => (
+                    <li key={todo} className="relative pl-6 flex items-center">
+                      <span className="absolute left-0 h-2 w-2 rounded-full bg-fuchsia-400 shadow-[0_0_8px_rgba(232,121,249,0.6)]" />
+                      {todo}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            </div>
+          ) : (
+            <div className="flex h-64 items-center justify-center text-sm text-white/60 font-medium">
+              选择任意卡片以查看细节
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

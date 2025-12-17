@@ -52,7 +52,7 @@ export function ApprovalsPanel({ onUpdate }: ApprovalsPanelProps) {
 
       // 从列表中移除已处理的请求
       setRequests((prev) => prev.filter((req) => req.id !== requestId));
-      
+
       // 通知父组件更新（例如刷新红点）
       if (onUpdate) {
         onUpdate();
@@ -75,62 +75,62 @@ export function ApprovalsPanel({ onUpdate }: ApprovalsPanelProps) {
   if (requests.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center space-y-4 text-white/40">
-        <div className="rounded-full bg-white/5 p-4">
-          <Check className="h-8 w-8" />
+        <div className="rounded-full bg-white/5 p-6 backdrop-blur-sm border border-white/10 shadow-inner">
+          <Check className="h-10 w-10 text-emerald-400/50" />
         </div>
-        <p>暂无待审核请求</p>
+        <p className="text-sm font-medium">暂无待审核请求</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 pb-4">
+    <div className="space-y-6 pb-4">
       <div className="flex items-center justify-between px-1">
-        <h3 className="text-sm font-medium text-white/80">待审核列表 ({requests.length})</h3>
+        <h3 className="text-sm font-bold uppercase tracking-wider text-white/60">待审核列表 ({requests.length})</h3>
       </div>
-      
-      <div className="space-y-3">
+
+      <div className="space-y-4">
         {requests.map((req) => (
-          <Card 
-            key={req.id} 
-            className="border-white/10 bg-white/5 p-4 transition-colors hover:bg-white/[0.07]"
+          <Card
+            key={req.id}
+            className="border-white/20 bg-white/10 p-5 transition-all hover:bg-white/15 hover:shadow-lg hover:shadow-white/5 backdrop-blur-md rounded-2xl"
           >
-            <div className="flex gap-4">
-              <Avatar className="h-12 w-12 border border-white/20">
+            <div className="flex gap-5">
+              <Avatar className="h-14 w-14 border-2 border-white/20 shadow-sm">
                 <AvatarImage src={req.avatar_url || undefined} />
-                <AvatarFallback>{req.display_name?.slice(0, 2) || "??"}</AvatarFallback>
+                <AvatarFallback className="bg-white/10 text-white/60">{req.display_name?.slice(0, 2) || "??"}</AvatarFallback>
               </Avatar>
-              
-              <div className="flex-1 space-y-2">
+
+              <div className="flex-1 space-y-3">
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-white">
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-bold text-white drop-shadow-sm">
                         {req.display_name || "Unknown User"}
                       </span>
-                      <Badge variant="outline" className="border-white/20 text-[10px] text-white/60">
+                      <Badge variant="outline" className="border-cyan-400/30 bg-cyan-400/10 text-[10px] text-cyan-300 uppercase tracking-wider shadow-sm">
                         注册申请
                       </Badge>
                     </div>
-                    <p className="text-xs text-white/40">@{req.username}</p>
+                    <p className="text-xs font-medium text-white/50 mt-0.5">@{req.username}</p>
                   </div>
-                  <span className="text-xs text-white/40">
+                  <span className="text-xs font-medium text-white/40 bg-white/5 px-2 py-1 rounded-full">
                     {new Date(req.created_at).toLocaleDateString()}
                   </span>
                 </div>
 
                 {req.signature && (
-                  <div className="rounded bg-black/20 p-2 text-sm text-white/80">
-                    <p className="text-xs text-white/40 mb-1">签名：</p>
-                    {req.signature}
+                  <div className="rounded-xl bg-black/20 p-3 text-sm text-white/90 border border-white/5">
+                    <p className="text-[10px] uppercase tracking-wider text-white/40 mb-1.5 font-bold">签名</p>
+                    <p className="leading-relaxed font-medium">{req.signature}</p>
                   </div>
                 )}
 
-                <div className="flex justify-end gap-2 pt-2">
+                <div className="flex justify-end gap-3 pt-2">
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-8 border border-white/10 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                    className="h-9 px-4 rounded-xl border border-white/10 text-rose-300 hover:bg-rose-500/10 hover:text-rose-200 hover:border-rose-500/30 transition-all"
                     onClick={() => handleReview(req.id, "reject")}
                     disabled={!!processingId}
                   >
@@ -138,14 +138,14 @@ export function ApprovalsPanel({ onUpdate }: ApprovalsPanelProps) {
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>
-                        <X className="mr-1.5 h-3.5 w-3.5" />
+                        <X className="mr-1.5 h-4 w-4" />
                         拒绝
                       </>
                     )}
                   </Button>
                   <Button
                     size="sm"
-                    className="h-8 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 hover:text-cyan-200"
+                    className="h-9 px-4 rounded-xl bg-gradient-to-r from-cyan-500/80 to-blue-500/80 text-white hover:from-cyan-400 hover:to-blue-400 shadow-lg shadow-cyan-500/20 border-none transition-all"
                     onClick={() => handleReview(req.id, "approve")}
                     disabled={!!processingId}
                   >
@@ -153,7 +153,7 @@ export function ApprovalsPanel({ onUpdate }: ApprovalsPanelProps) {
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>
-                        <Check className="mr-1.5 h-3.5 w-3.5" />
+                        <Check className="mr-1.5 h-4 w-4" />
                         批准
                       </>
                     )}

@@ -202,123 +202,129 @@ export function JournalFeed() {
     <div className="flex h-full flex-col space-y-6">
       {/* 发布区域 */}
       {sessionUser ? (
-        <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
-          <div className="flex gap-3">
-            <Avatar className="h-8 w-8 border border-white/20">
+        <div className="space-y-4 rounded-3xl border border-white/20 bg-white/10 p-6 backdrop-blur-md shadow-sm">
+          <div className="flex gap-4">
+            <Avatar className="h-10 w-10 border border-white/30 shadow-sm">
               <AvatarImage src={sessionUser.avatarUrl || undefined} />
               <AvatarFallback>{sessionUser.displayName.slice(0, 2)}</AvatarFallback>
             </Avatar>
-            <Textarea
-              placeholder="分享你的想法..."
-              value={newPostContent}
-              onChange={(e) => setNewPostContent(e.target.value)}
-              className="min-h-[80px] resize-none border-white/10 bg-black/20 text-sm text-white placeholder:text-white/40 focus-visible:ring-cyan-500/50"
-            />
-          </div>
-          <div className="space-y-3 rounded-xl border border-dashed border-white/15 bg-black/10 p-3">
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Input
-                type="url"
-                placeholder="粘贴图片链接（例如来自 Gitee 图床）"
-                value={mediaUrlInput}
-                onChange={(e) => setMediaUrlInput(e.target.value)}
-                className="border-white/20 bg-black/20 text-sm text-white placeholder:text-white/30"
+            <div className="flex-1 space-y-4">
+              <Textarea
+                placeholder="分享你的想法..."
+                value={newPostContent}
+                onChange={(e) => setNewPostContent(e.target.value)}
+                className="min-h-[100px] resize-none rounded-2xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40 focus-visible:ring-cyan-400/50 focus-visible:border-cyan-400/50 transition-all"
               />
-              <Button
-                type="button"
-                variant="outline"
-                className="shrink-0 border-white/30 bg-white/10 text-white hover:bg-white/20"
-                onClick={handleAddMediaUrl}
-              >
-                <ImagePlus className="mr-2 h-4 w-4" />
-                添加链接
-              </Button>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={handleLocalFilesSelected}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                className="border border-white/20 bg-white/10 text-white hover:bg-white/20"
-                onClick={handlePickLocalFiles}
-                disabled={uploadingMedia}
-              >
-                {uploadingMedia ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="mr-2 h-4 w-4" />
-                )}
-                {uploadingMedia ? "上传中…" : "上传本地图片"}
-              </Button>
-              <p className="text-xs text-white/50">支持 png / jpg / webp，将上传至 Gitee 图床并写入数据库。</p>
-            </div>
-            {mediaError && <p className="text-xs text-red-400">{mediaError}</p>}
-            {mediaUrls.length > 0 && (
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {mediaUrls.map((url, index) => (
-                  <div
-                    key={`${url}-${index}`}
-                    className="group relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-white/5"
-                    onClick={() => setLightboxImage({ url, alt: `图片预览 ${index + 1}` })}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setLightboxImage({ url, alt: `图片预览 ${index + 1}` });
-                      }
-                    }}
+
+              <div className="space-y-3 rounded-2xl border border-dashed border-white/20 bg-white/5 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Input
+                    type="url"
+                    placeholder="粘贴图片链接"
+                    value={mediaUrlInput}
+                    onChange={(e) => setMediaUrlInput(e.target.value)}
+                    className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/30 rounded-xl focus-visible:ring-cyan-400/50"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0 border-white/30 bg-white/10 text-white hover:bg-white/20 rounded-xl"
+                    onClick={handleAddMediaUrl}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={url}
-                      alt={`图片预览 ${index + 1}`}
-                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                      loading="lazy"
-                      referrerPolicy="no-referrer"
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveMediaUrl(index);
-                      }}
-                      className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white/80 opacity-0 transition hover:bg-black/80 group-hover:opacity-100"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+                    <ImagePlus className="mr-2 h-4 w-4" />
+                    添加链接
+                  </Button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleLocalFilesSelected}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="border border-white/20 bg-white/10 text-white hover:bg-white/20 rounded-xl"
+                    onClick={handlePickLocalFiles}
+                    disabled={uploadingMedia}
+                  >
+                    {uploadingMedia ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="mr-2 h-4 w-4" />
+                    )}
+                    {uploadingMedia ? "上传中…" : "上传本地图片"}
+                  </Button>
+                  <p className="text-xs text-white/50">支持 png / jpg / webp</p>
+                </div>
+
+                {mediaError && <p className="text-xs text-rose-300">{mediaError}</p>}
+
+                {mediaUrls.length > 0 && (
+                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 pt-2">
+                    {mediaUrls.map((url, index) => (
+                      <div
+                        key={`${url}-${index}`}
+                        className="group relative aspect-square overflow-hidden rounded-xl border border-white/20 bg-white/5 shadow-sm"
+                        onClick={() => setLightboxImage({ url, alt: `图片预览 ${index + 1}` })}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setLightboxImage({ url, alt: `图片预览 ${index + 1}` });
+                          }
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`图片预览 ${index + 1}`}
+                          className="h-full w-full object-cover transition duration-500 group-hover:scale-110"
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveMediaUrl(index);
+                          }}
+                          className="absolute right-2 top-2 rounded-full bg-black/40 p-1.5 text-white/90 opacity-0 backdrop-blur-md transition hover:bg-rose-500 group-hover:opacity-100"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-            <p className="text-xs text-white/40">最多 8 张图片，支持外链或本地上传。</p>
-          </div>
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              onClick={handleCreatePost}
-              disabled={isPosting || !newPostContent.trim()}
-              className="bg-cyan-500/80 text-white hover:bg-cyan-500"
-            >
-              {isPosting ? (
-                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-3 w-3" />
-              )}
-              发布
-            </Button>
+
+              <div className="flex justify-end pt-2">
+                <Button
+                  size="lg"
+                  onClick={handleCreatePost}
+                  disabled={isPosting || !newPostContent.trim()}
+                  className="bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:from-cyan-400 hover:to-blue-400 rounded-xl shadow-lg shadow-cyan-500/20 border-none"
+                >
+                  {isPosting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="mr-2 h-4 w-4" />
+                  )}
+                  发布日记
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-center text-sm text-white/60">
-          登录后即可发布日记
+        <div className="rounded-3xl border border-white/20 bg-white/10 p-8 text-center backdrop-blur-md">
+          <p className="text-white/60">登录后即可发布日记</p>
         </div>
       )}
 
@@ -585,50 +591,50 @@ function JournalItem({
   );
 
   return (
-    <Card className="group relative border-white/10 bg-white/5 p-4 transition-colors hover:bg-white/[0.07]">
-      <div className="flex gap-3">
-        <Avatar className="h-10 w-10 border border-white/20">
+    <Card className="group relative border-white/20 bg-white/10 p-6 transition-all hover:bg-white/15 hover:shadow-lg hover:shadow-white/5 backdrop-blur-md rounded-3xl">
+      <div className="flex gap-4">
+        <Avatar className="h-12 w-12 border border-white/30 shadow-sm">
           <AvatarImage src={post.author?.avatar_url || undefined} />
           <AvatarFallback>{post.author?.display_name?.slice(0, 2) || "游客"}</AvatarFallback>
         </Avatar>
-        <div className="flex-1 space-y-1">
+        <div className="flex-1 space-y-2">
           <div className="flex items-center justify-between">
-            <p className="font-medium text-white">{post.author?.display_name || "Unknown"}</p>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-white/40">
+            <div>
+              <p className="font-bold text-white text-lg drop-shadow-sm">{post.author?.display_name || "Unknown"}</p>
+              <p className="text-xs text-white/50 font-medium">
                 {new Date(post.created_at).toLocaleString()}
-              </span>
-              {isAuthor && !isEditing && (
-                <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-white/40 hover:bg-white/10 hover:text-white"
-                    onClick={() => setIsEditing(true)}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-white/40 hover:bg-red-500/10 hover:text-red-400"
-                    onClick={handleDeletePost}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              )}
+              </p>
             </div>
+            {isAuthor && !isEditing && (
+              <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-white/40 hover:bg-white/10 hover:text-white rounded-full"
+                  onClick={() => setIsEditing(true)}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-white/40 hover:bg-rose-500/20 hover:text-rose-400 rounded-full"
+                  onClick={handleDeletePost}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
 
           {isEditing ? (
-            <div className="space-y-2 pt-1">
+            <div className="space-y-3 pt-2">
               <Textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
-                className="min-h-[100px] border-white/10 bg-black/20 text-sm text-white focus-visible:ring-cyan-500/50"
+                className="min-h-[120px] rounded-xl border-white/20 bg-white/5 text-sm text-white focus-visible:ring-cyan-400/50"
               />
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end gap-3">
                 <Button
                   size="sm"
                   variant="ghost"
@@ -636,7 +642,7 @@ function JournalItem({
                     setIsEditing(false);
                     setEditContent(post.content);
                   }}
-                  className="h-7 text-xs text-white/60 hover:text-white"
+                  className="h-8 text-xs text-white/60 hover:text-white rounded-lg"
                 >
                   <X className="mr-1 h-3 w-3" />
                   取消
@@ -645,7 +651,7 @@ function JournalItem({
                   size="sm"
                   onClick={handleSaveEdit}
                   disabled={isSaving || !editContent.trim()}
-                  className="h-7 bg-cyan-500/20 text-xs text-cyan-300 hover:bg-cyan-500/30"
+                  className="h-8 bg-cyan-500/20 text-xs text-cyan-300 hover:bg-cyan-500/30 rounded-lg border border-cyan-500/30"
                 >
                   {isSaving ? (
                     <Loader2 className="mr-1 h-3 w-3 animate-spin" />
@@ -657,12 +663,12 @@ function JournalItem({
               </div>
             </div>
           ) : (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/80">{post.content}</p>
+            <p className="whitespace-pre-wrap text-base leading-relaxed text-white/90 font-medium">{post.content}</p>
           )}
 
           {post.media && post.media.length > 0 && (
             <div className={cn(
-              "mt-3 grid gap-2",
+              "mt-4 grid gap-3",
               post.media.length === 1 ? "grid-cols-1 sm:max-w-[60%]" :
                 post.media.length === 2 || post.media.length === 4 ? "grid-cols-2 sm:max-w-[80%]" :
                   "grid-cols-3"
@@ -673,7 +679,7 @@ function JournalItem({
                   type="button"
                   onClick={() => onImagePreview?.(media.url, "日记图片")}
                   className={cn(
-                    "group relative overflow-hidden rounded-lg border border-white/10 bg-black/20 outline-none transition focus-visible:ring-2 focus-visible:ring-cyan-500/60",
+                    "group relative overflow-hidden rounded-2xl border border-white/20 bg-white/5 outline-none transition focus-visible:ring-2 focus-visible:ring-cyan-400/60 shadow-sm",
                     post.media!.length > 1 ? "aspect-square" : "w-full"
                   )}
                 >
@@ -682,7 +688,7 @@ function JournalItem({
                     src={media.url}
                     alt="日记图片"
                     className={cn(
-                      "h-full w-full transition duration-500 group-hover:scale-105",
+                      "h-full w-full transition duration-700 group-hover:scale-110",
                       post.media!.length === 1 ? "max-h-[500px] object-cover" : "object-cover"
                     )}
                     loading="lazy"
@@ -693,73 +699,73 @@ function JournalItem({
             </div>
           )}
 
-          <div className="flex items-center gap-4 pt-2">
+          <div className="flex items-center gap-4 pt-4">
             <Button
               variant="ghost"
               size="sm"
               className={cn(
-                "h-8 gap-1.5 px-2 text-xs hover:bg-white/10",
-                liked ? "text-pink-500 hover:text-pink-400" : "text-white/60 hover:text-white"
+                "h-9 gap-2 px-3 text-xs rounded-full border border-transparent hover:border-white/20 hover:bg-white/10 transition-all",
+                liked ? "text-rose-400 bg-rose-500/10 border-rose-500/20" : "text-white/60 hover:text-white"
               )}
               onClick={handleLike}
               disabled={!currentUserId}
             >
-              <Heart className={cn("h-3.5 w-3.5", liked && "fill-current")} />
-              {likeCount > 0 && likeCount}
+              <Heart className={cn("h-4 w-4", liked && "fill-current")} />
+              {likeCount > 0 ? likeCount : "点赞"}
             </Button>
-            <div className="flex items-center gap-2 rounded-full border border-white/15 px-3 py-1 text-xs text-white/60">
+            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-white/60">
               <MessageSquare className="h-3.5 w-3.5" />
               {totalComments} 条评论
             </div>
           </div>
 
-          <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+          <div className="mt-6 space-y-4 border-t border-white/10 pt-6">
             {loadingComments ? (
               <div className="flex justify-center py-4">
-                <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+                <Loader2 className="h-5 w-5 animate-spin text-white/40" />
               </div>
             ) : comments.length > 0 ? (
-              <div className="space-y-3">{comments.map((comment) => renderComment(comment))}</div>
+              <div className="space-y-4">{comments.map((comment) => renderComment(comment))}</div>
             ) : (
-              <p className="text-center text-xs text-white/40">暂无评论</p>
+              <p className="text-center text-xs text-white/30 italic">暂无评论，快来抢沙发吧~</p>
             )}
 
             {currentUserId ? (
-              <div className="space-y-2">
+              <div className="space-y-3 pt-2">
                 {replyTarget && (
-                  <div className="flex items-center justify-between rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
-                    <span>正在回复 {replyTarget.targetName}</span>
+                  <div className="flex items-center justify-between rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-xs text-cyan-100 backdrop-blur-sm">
+                    <span>正在回复 <span className="font-bold">{replyTarget.targetName}</span></span>
                     <button
                       onClick={() => setReplyTarget(null)}
-                      className="text-cyan-200 hover:text-white"
+                      className="text-cyan-200 hover:text-white p-1 hover:bg-cyan-500/20 rounded-full transition"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 )}
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                   <Textarea
                     value={commentContent}
                     onChange={(e) => setCommentContent(e.target.value)}
                     placeholder={commentPlaceholder}
-                    className="min-h-[36px] flex-1 resize-none border-white/10 bg-black/20 py-2 text-xs text-white placeholder:text-white/30 focus-visible:ring-cyan-500/50"
+                    className="min-h-[44px] flex-1 resize-none rounded-xl border-white/20 bg-white/5 py-3 text-xs text-white placeholder:text-white/30 focus-visible:ring-cyan-400/50 transition-all"
                   />
                   <Button
                     size="icon"
-                    className="h-9 w-9 shrink-0 bg-white/10 hover:bg-white/20"
+                    className="h-11 w-11 shrink-0 rounded-xl bg-white/10 hover:bg-cyan-500 hover:text-white border border-white/10 transition-all shadow-sm"
                     onClick={handlePostComment}
                     disabled={submittingComment || !commentContent.trim()}
                   >
                     {submittingComment ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Loader2 className="h-5 w-5 animate-spin" />
                     ) : (
-                      <Send className="h-4 w-4" />
+                      <Send className="h-5 w-5" />
                     )}
                   </Button>
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-white/50">登录后即可参与评论</p>
+              <p className="text-center text-xs text-white/40 py-2">登录后即可参与评论</p>
             )}
           </div>
         </div>

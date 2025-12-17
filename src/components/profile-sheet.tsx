@@ -187,34 +187,34 @@ export function ProfileSheet({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="right"
-          className="w-full border-white/10 bg-[#040814]/95 p-0 text-white sm:max-w-md"
+          className="w-full border-white/20 bg-slate-900/80 backdrop-blur-xl p-0 text-white sm:max-w-md shadow-2xl"
         >
-          <SheetHeader className="items-start border-b border-white/10 px-6 py-4 text-left">
-            <SheetTitle>个人设置</SheetTitle>
-            <SheetDescription className="text-white/60">
+          <SheetHeader className="items-start border-b border-white/20 px-6 py-5 text-left">
+            <SheetTitle className="text-2xl font-black drop-shadow-md">个人设置</SheetTitle>
+            <SheetDescription className="text-white/80 font-medium">
               修改昵称、头像和签名，随时保持个人形象。
             </SheetDescription>
           </SheetHeader>
-          <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
-            <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+            <div className="flex items-center gap-5 rounded-3xl border border-white/20 bg-white/10 p-5 backdrop-blur-md shadow-sm">
               <div className="relative">
                 <button
                   type="button"
                   onClick={handleAvatarClick}
-                  className="group relative flex h-20 w-20 items-center justify-center rounded-full"
+                  className="group relative flex h-24 w-24 items-center justify-center rounded-full shadow-lg"
                   disabled={!isEditable || avatarSaving}
                 >
-                  <Avatar className="h-20 w-20 border border-white/10 transition group-hover:ring-2 group-hover:ring-cyan-400/60">
+                  <Avatar className="h-24 w-24 border-2 border-white/30 transition group-hover:ring-4 group-hover:ring-cyan-400/40 group-hover:border-white">
                     <AvatarImage src={sessionUser?.avatarUrl ?? user.avatarUrl} />
-                    <AvatarFallback>{user.displayName.slice(0, 2)}</AvatarFallback>
+                    <AvatarFallback className="bg-indigo-500 text-white font-bold text-xl">{user.displayName.slice(0, 2)}</AvatarFallback>
                   </Avatar>
-                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center rounded-full bg-black/70 text-xs text-white opacity-0 transition group-hover:opacity-100">
-                    <Pencil className="h-4 w-4" />
-                    <span className="mt-1 text-[10px] tracking-[0.3em]">更换头像</span>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center rounded-full bg-black/60 text-xs text-white opacity-0 transition backdrop-blur-sm group-hover:opacity-100">
+                    <Pencil className="h-5 w-5 mb-1" />
+                    <span className="text-[10px] font-bold tracking-widest">更换</span>
                   </div>
                   {avatarSaving && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/70">
-                      <Loader2 className="h-5 w-5 animate-spin" />
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-sm">
+                      <Loader2 className="h-6 w-6 animate-spin text-cyan-400" />
                     </div>
                   )}
                 </button>
@@ -226,7 +226,7 @@ export function ProfileSheet({
                   onChange={handleAvatarSelected}
                 />
               </div>
-              <div className="flex-1 space-y-1">
+              <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-2">
                   {editingName ? (
                     <div className="flex w-full items-center gap-2">
@@ -235,12 +235,12 @@ export function ProfileSheet({
                         onChange={(event) => setDraftName(event.target.value)}
                         autoFocus
                         maxLength={20}
-                        className="border-white/20 bg-black/40 text-white placeholder:text-white/40"
+                        className="border-white/30 bg-white/10 text-white placeholder:text-white/50 font-bold focus-visible:ring-cyan-400"
                         disabled={nameSaving}
                       />
                       <Button
                         size="icon"
-                        className="h-9 w-9 bg-cyan-500/80 text-white hover:bg-cyan-500"
+                        className="h-9 w-9 bg-cyan-500 text-white hover:bg-cyan-400 shadow-md"
                         onClick={handleSaveName}
                         disabled={nameSaving || !draftName.trim()}
                       >
@@ -249,7 +249,7 @@ export function ProfileSheet({
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-9 w-9 text-white/60 hover:text-white"
+                        className="h-9 w-9 text-white/70 hover:text-white hover:bg-white/10"
                         onClick={() => {
                           setEditingName(false);
                           setDraftName(sessionUser?.displayName ?? user.displayName);
@@ -261,12 +261,12 @@ export function ProfileSheet({
                     </div>
                   ) : (
                     <>
-                      <p className="text-lg font-semibold">{sessionUser?.displayName ?? user.displayName}</p>
+                      <p className="text-xl font-black drop-shadow-sm">{sessionUser?.displayName ?? user.displayName}</p>
                       {isEditable && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-white/60 hover:text-white"
+                          className="h-8 w-8 text-white/60 hover:text-white hover:bg-white/10 rounded-full"
                           onClick={() => {
                             setEditingName(true);
                             setDraftName(sessionUser?.displayName ?? user.displayName);
@@ -278,23 +278,23 @@ export function ProfileSheet({
                     </>
                   )}
                 </div>
-                <p className="text-sm text-white/60">@{sessionUser?.username ?? user.username}</p>
-                <Badge className="bg-black/50 text-xs uppercase tracking-[0.3em] text-white/60">
+                <p className="text-sm text-white/70 font-medium">@{sessionUser?.username ?? user.username}</p>
+                <Badge className="bg-white/20 text-xs uppercase tracking-[0.2em] text-white font-bold border border-white/10 shadow-sm">
                   {user.role === "admin" ? "管理员" : "普通用户"}
                 </Badge>
               </div>
             </div>
 
             {profileError && (
-              <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              <div className="rounded-2xl border border-rose-500/30 bg-rose-500/20 px-4 py-3 text-sm text-rose-100 font-medium shadow-sm">
                 {profileError}
               </div>
             )}
 
-            <div className="space-y-3 rounded-2xl border border-white/10 bg-black/30 p-4">
-              <div className="flex items-center justify-between text-xs uppercase tracking-[0.4em] text-white/40">
+            <div className="space-y-3 rounded-3xl border border-white/20 bg-white/10 p-5 backdrop-blur-md shadow-sm">
+              <div className="flex items-center justify-between text-xs uppercase tracking-[0.4em] text-white/60 font-bold">
                 <span>签名</span>
-                {signatureSaving && <Loader2 className="h-3.5 w-3.5 animate-spin text-white/50" />}
+                {signatureSaving && <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-400" />}
               </div>
               <Textarea
                 value={signatureDraft}
@@ -303,32 +303,32 @@ export function ProfileSheet({
                 onBlur={handleSignatureBlur}
                 readOnly={!isEditable}
                 placeholder="写下一句心情或座右铭..."
-                className="min-h-[90px] resize-none border-white/10 bg-black/40 text-sm text-white placeholder:text-white/40 focus-visible:ring-cyan-500/50"
+                className="min-h-[100px] resize-none border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40 focus-visible:ring-cyan-400 font-medium leading-relaxed"
               />
-              {!isEditable && <p className="text-xs text-white/40">登录后即可编辑签名。</p>}
+              {!isEditable && <p className="text-xs text-white/50 font-medium">登录后即可编辑签名。</p>}
               {signatureEditing && isEditable && (
-                <p className="text-xs text-white/50">点击其他区域会自动保存签名。</p>
+                <p className="text-xs text-cyan-300 font-medium">点击其他区域会自动保存签名。</p>
               )}
             </div>
 
-            <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/70">
+            <div className="grid gap-4 rounded-3xl border border-white/20 bg-white/10 p-5 text-sm text-white/80 backdrop-blur-md shadow-sm">
               <div className="flex items-center justify-between">
-                <span>日记数量</span>
-                <span className="font-semibold text-white">{user.metricSummary.entries}</span>
+                <span className="font-medium">日记数量</span>
+                <span className="font-bold text-white text-lg drop-shadow-sm">{user.metricSummary.entries}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>系统 Uptime</span>
-                <span className="font-semibold text-white">{user.metricSummary.uptime}</span>
+                <span className="font-medium">系统 Uptime</span>
+                <span className="font-bold text-white text-lg drop-shadow-sm">{user.metricSummary.uptime}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>邀请名额</span>
-                <span className="font-semibold text-white">{user.metricSummary.invites}</span>
+                <span className="font-medium">邀请名额</span>
+                <span className="font-bold text-white text-lg drop-shadow-sm">{user.metricSummary.invites}</span>
               </div>
             </div>
           </div>
-          <SheetFooter className="border-t border-white/10 px-6 py-4">
+          <SheetFooter className="border-t border-white/20 px-6 py-5">
             <Button
-              className="w-full bg-white/10 text-white hover:bg-white/20"
+              className="w-full bg-white/20 text-white hover:bg-white/30 border border-white/10 shadow-md font-bold h-11 text-base backdrop-blur-sm"
               onClick={handlePrimary}
               disabled={sessionLoading}
             >
@@ -408,23 +408,23 @@ function AvatarEditorDialog({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/70 px-4 py-6 text-white backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#050814]/95 p-6 shadow-2xl">
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/60 px-4 py-6 text-white backdrop-blur-md">
+      <div className="w-full max-w-md rounded-3xl border border-white/20 bg-slate-900/90 p-8 shadow-2xl backdrop-blur-xl">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">调整头像</h3>
+          <h3 className="text-xl font-black drop-shadow-sm">调整头像</h3>
           <button
             type="button"
             onClick={onCancel}
-            className="text-white/60 hover:text-white"
+            className="text-white/60 hover:text-white hover:bg-white/10 rounded-full p-1 transition-colors"
           >
-            <X className="h-5 w-5" />
+            <X className="h-6 w-6" />
           </button>
         </div>
-        <p className="mt-1 text-sm text-white/60">拖动滑块微调位置，系统会自动裁剪为正方形。</p>
-        <div className="mt-5 flex items-center justify-center">
+        <p className="mt-2 text-sm text-white/70 font-medium">拖动滑块微调位置，系统会自动裁剪为正方形。</p>
+        <div className="mt-8 flex items-center justify-center">
           <div
             ref={previewRef}
-            className="relative h-56 w-56 cursor-grab select-none overflow-hidden rounded-full border border-white/20 bg-black/60"
+            className="relative h-64 w-64 cursor-grab select-none overflow-hidden rounded-full border-4 border-white/20 bg-black/40 shadow-inner"
             style={{ touchAction: "none" }}
             onPointerDown={handlePointerDown}
           >
@@ -439,39 +439,39 @@ function AvatarEditorDialog({
             />
           </div>
         </div>
-        <div className="mt-6 space-y-4 text-sm">
-          <label className="flex flex-col gap-2">
-            <span>水平位置</span>
+        <div className="mt-8 space-y-6 text-sm font-medium text-white/80">
+          <label className="flex flex-col gap-3">
+            <span className="text-xs uppercase tracking-wider font-bold text-white/60">水平位置</span>
             <input
               type="range"
               min={-100}
               max={100}
               value={offsetX}
               onChange={(event) => setOffsetX(Number(event.target.value))}
-              className="h-1 w-full cursor-pointer rounded-full bg-white/20 accent-cyan-400"
+              className="h-2 w-full cursor-pointer rounded-full bg-white/10 accent-cyan-400 hover:bg-white/20 transition-colors"
             />
           </label>
-          <label className="flex flex-col gap-2">
-            <span>垂直位置</span>
+          <label className="flex flex-col gap-3">
+            <span className="text-xs uppercase tracking-wider font-bold text-white/60">垂直位置</span>
             <input
               type="range"
               min={-100}
               max={100}
               value={offsetY}
               onChange={(event) => setOffsetY(Number(event.target.value))}
-              className="h-1 w-full cursor-pointer rounded-full bg-white/20 accent-cyan-400"
+              className="h-2 w-full cursor-pointer rounded-full bg-white/10 accent-cyan-400 hover:bg-white/20 transition-colors"
             />
           </label>
         </div>
-        <div className="mt-6 flex justify-end gap-3">
-          <Button variant="ghost" className="text-white/70 hover:text-white" onClick={onCancel}>
+        <div className="mt-8 flex justify-end gap-4">
+          <Button variant="ghost" className="text-white/70 hover:text-white hover:bg-white/10 font-bold" onClick={onCancel}>
             取消
           </Button>
           <Button
-            className="bg-cyan-500/80 text-white hover:bg-cyan-500"
+            className="bg-cyan-500 text-white hover:bg-cyan-400 shadow-lg font-bold px-6"
             onClick={() => onConfirm(offsetX, offsetY)}
           >
-            确认
+            确认裁剪
           </Button>
         </div>
       </div>

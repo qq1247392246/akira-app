@@ -150,6 +150,7 @@ export function AkiraShell({
           type: fetchedCard.type || mockCard.type,
           // 如果 API 描述为空，使用 Mock 描述
           description: fetchedCard.description || mockCard.description,
+          adminOnly: fetchedCard.adminOnly ?? mockCard.adminOnly,
         };
       });
 
@@ -192,8 +193,7 @@ export function AkiraShell({
 
   const resolvedUser = useMemo<PortalUser>(() => {
     if (!sessionUser) {
-      // 未登录时显示默认 Mock 数据以保持 UI 丰富度（标签、指标等）
-      return user;
+      return guestPortalUser;
     }
     return {
       ...user,
@@ -233,6 +233,14 @@ export function AkiraShell({
       console.warn("退出登录失败", error);
     } finally {
       setSessionUser(null);
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.removeItem("akira_session");
+        } catch (error) {
+          console.warn("清理本地 session 失败", error);
+        }
+        window.location.href = "/";
+      }
     }
   }, [setSessionUser]);
 
@@ -306,6 +314,30 @@ export function AkiraShell({
 }
 
 function AnimatedBackground() {
+  const [particleStyles, setParticleStyles] = useState<Array<React.CSSProperties>>([]);
+
+  useEffect(() => {
+    const styles = [...Array(25)].map(() => {
+      const width = Math.random() * 4 + 2;
+      const height = Math.random() * 4 + 2;
+      const blur = Math.random() * 10 + 5;
+
+      return {
+        top: `${Math.random() * 100}%`,
+        left: `${Math.random() * 100}%`,
+        width: `${width}px`,
+        height: `${height}px`,
+        "--tx": `${Math.random() * 200 - 100}px`,
+        "--ty": `-${Math.random() * 200 + 50}px`,
+        "--r": `${Math.random() * 360}deg`,
+        "--s": `${Math.random() * 0.5 + 0.5}`,
+        "--d": `${Math.random() * 10 + 10}s`,
+        boxShadow: `0 0 ${blur}px rgba(255,255,255,0.8)`,
+      } as React.CSSProperties;
+    });
+    setParticleStyles(styles);
+  }, []);
+
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden bg-[#1a1b26]">
       {/* 1. 动漫风渐变基底 - 梦幻晚霞/新海诚风格 */}
@@ -326,22 +358,11 @@ function AnimatedBackground() {
 
       {/* 4. 粒子系统 - 樱花/光尘风格 */}
       <div className="absolute inset-0">
-        {[...Array(25)].map((_, i) => (
+        {particleStyles.map((style, i) => (
           <div
-            key={i}
+            key={`particle-${i}`}
             className="absolute rounded-full bg-white/80 blur-[0.5px] animate-float-particle"
-            style={{
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-              width: `${Math.random() * 4 + 2}px`,
-              height: `${Math.random() * 4 + 2}px`,
-              '--tx': `${Math.random() * 200 - 100}px`,
-              '--ty': `-${Math.random() * 200 + 50}px`,
-              '--r': `${Math.random() * 360}deg`,
-              '--s': `${Math.random() * 0.5 + 0.5}`,
-              '--d': `${Math.random() * 10 + 10}s`, // 更慢、更优雅的漂浮
-              boxShadow: `0 0 ${Math.random() * 10 + 5}px rgba(255,255,255,0.8)`
-            } as React.CSSProperties}
+            style={style}
           />
         ))}
       </div>
@@ -541,7 +562,7 @@ function UserMenu({
         onClick={handleToggle}
       >
         <Avatar className="h-9 w-9 border border-white/30">
-          <AvatarImage src={user.avatarUrl} alt={user.displayName} />
+          <AvatarImage src={user.avatarUrl || undefined} alt={user.displayName} />
           <AvatarFallback>{user.displayName.slice(0, 2)}</AvatarFallback>
         </Avatar>
         <div className="hidden sm:flex flex-col leading-tight">

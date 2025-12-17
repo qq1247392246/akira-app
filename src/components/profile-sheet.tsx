@@ -205,7 +205,7 @@ export function ProfileSheet({
                   disabled={!isEditable || avatarSaving}
                 >
                   <Avatar className="h-24 w-24 border-2 border-white/30 transition group-hover:ring-4 group-hover:ring-cyan-400/40 group-hover:border-white">
-                    <AvatarImage src={sessionUser?.avatarUrl ?? user.avatarUrl} />
+                    <AvatarImage src={(sessionUser?.avatarUrl ?? user.avatarUrl) || undefined} />
                     <AvatarFallback className="bg-indigo-500 text-white font-bold text-xl">{user.displayName.slice(0, 2)}</AvatarFallback>
                   </Avatar>
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center rounded-full bg-black/60 text-xs text-white opacity-0 transition backdrop-blur-sm group-hover:opacity-100">

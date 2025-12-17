@@ -10,8 +10,8 @@ type JournalCommentRow = Database["public"]["Tables"]["journal_comments"]["Row"]
 type PublicUser = {
   id: string;
   username: string;
-  displayName: string;
-  avatarUrl: string | null;
+  display_name: string;
+  avatar_url: string | null;
   signature: string | null;
 };
 
@@ -42,8 +42,8 @@ const createPostSchema = z.object({
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const parsed = listQuerySchema.safeParse({
-    limit: url.searchParams.get("limit"),
-    cursor: url.searchParams.get("cursor"),
+    limit: url.searchParams.get("limit") ?? undefined,
+    cursor: url.searchParams.get("cursor") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -133,17 +133,22 @@ export async function GET(request: Request) {
       visibility: post.visibility,
       createdAt: post.created_at,
       updatedAt: post.updated_at,
-      author,
+      author: author
+        ? {
+            id: author.id,
+            username: author.username,
+            display_name: author.display_name,
+            avatar_url: author.avatar_url,
+            signature: author.signature,
+          }
+        : null,
       media: mediaItems,
       likes: {
-        total: likes.length,
-        users: likes
-          .map((userId) => usersMap.get(userId))
-          .filter((user): user is PublicUser => Boolean(user))
-          .slice(0, 20),
+        count: likes.length,
+        user_ids: likes,
       },
       comments: commentTree,
-      commentCount: postComments.length,
+      comments_count: postComments.length,
     };
   });
 
@@ -203,6 +208,9 @@ export async function POST(request: Request) {
     createdAt: post.created_at,
     updatedAt: post.updated_at,
     author,
+    likes: { count: 0, user_ids: [] },
+    comments_count: 0,
+    comments: [],
     media: (mediaUrls ?? []).map((url, index) => ({ id: `${post.id}-${index}`, url, position: index })),
   });
 }
@@ -227,8 +235,8 @@ async function loadUsersMap(userIds: string[]): Promise<Map<string, PublicUser>>
     map.set(user.id, {
       id: user.id,
       username: user.username,
-      displayName: user.display_name,
-      avatarUrl: user.avatar_url,
+      display_name: user.display_name,
+      avatar_url: user.avatar_url,
       signature: user.signature,
     });
   });
@@ -242,6 +250,12 @@ function buildMediaMap(rows: JournalMediaRow[]) {
     const list = map.get(media.post_id) ?? [];
     list.push({ id: media.id, url: media.asset_url, position: media.position });
     map.set(media.post_id, list);
+  });
+  map.forEach((list, key) => {
+    map.set(
+      key,
+      list.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    );
   });
   return map;
 }

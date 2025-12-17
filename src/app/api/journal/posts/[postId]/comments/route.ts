@@ -5,6 +5,14 @@ import type { Database } from "@/types/database";
 
 type JournalCommentRow = Database["public"]["Tables"]["journal_comments"]["Row"];
 
+type PublicUser = {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  signature: string | null;
+};
+
 type CommentNode = {
   id: string;
   content: string | null;
@@ -13,6 +21,8 @@ type CommentNode = {
   parentId: string | null;
   authorId: string;
   targetUserId: string | null;
+  author: PublicUser | null;
+  targetUser: PublicUser | null;
   replies?: CommentNode[];
 };
 
@@ -45,7 +55,16 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ po
     return NextResponse.json({ error: "Failed to load comments" }, { status: 500 });
   }
 
-  const comments = buildCommentTree(data ?? []);
+  const userIds = new Set<string>();
+  (data ?? []).forEach((comment) => {
+    userIds.add(comment.author_id);
+    if (comment.target_user_id) {
+      userIds.add(comment.target_user_id);
+    }
+  });
+
+  const usersMap = await loadUsersMap(Array.from(userIds));
+  const comments = buildCommentTree(data ?? [], usersMap);
   return NextResponse.json({ comments, total: data?.length ?? 0 });
 }
 
@@ -118,7 +137,36 @@ export async function POST(request: NextRequest, context: { params: Promise<{ po
   });
 }
 
-function buildCommentTree(rows: JournalCommentRow[]): CommentNode[] {
+async function loadUsersMap(userIds: string[]): Promise<Map<string, PublicUser>> {
+  const map = new Map<string, PublicUser>();
+  if (userIds.length === 0) {
+    return map;
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("users")
+    .select("id, username, display_name, avatar_url, signature")
+    .in("id", userIds);
+
+  if (error || !data) {
+    console.error(error);
+    return map;
+  }
+
+  data.forEach((user) => {
+    map.set(user.id, {
+      id: user.id,
+      username: user.username,
+      display_name: user.display_name,
+      avatar_url: user.avatar_url,
+      signature: user.signature,
+    });
+  });
+
+  return map;
+}
+
+function buildCommentTree(rows: JournalCommentRow[], usersMap: Map<string, PublicUser>): CommentNode[] {
   const topLevel: CommentNode[] = [];
   const repliesMap = new Map<string, CommentNode[]>();
 
@@ -131,6 +179,8 @@ function buildCommentTree(rows: JournalCommentRow[]): CommentNode[] {
       parentId: comment.parent_comment_id,
       authorId: comment.author_id,
       targetUserId: comment.target_user_id,
+      author: usersMap.get(comment.author_id) ?? null,
+      targetUser: comment.target_user_id ? usersMap.get(comment.target_user_id) ?? null : null,
     };
 
     if (!comment.parent_comment_id) {

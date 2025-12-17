@@ -17,10 +17,14 @@ type CommentNode = {
   id: string;
   content: string | null;
   createdAt: string;
+  created_at: string;
   deletedAt: string | null;
+  deleted_at: string | null;
   parentId: string | null;
+  parent_comment_id: string | null;
   authorId: string;
   targetUserId: string | null;
+  author_id: string;
   author: PublicUser | null;
   targetUser: PublicUser | null;
   replies?: CommentNode[];
@@ -133,6 +137,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ po
     parentCommentId: data.parent_comment_id,
     content: data.content,
     createdAt: data.created_at,
+    created_at: data.created_at,
+    author_id: data.author_id,
+    parent_comment_id: data.parent_comment_id,
     targetUserId: data.target_user_id,
   });
 }
@@ -175,12 +182,16 @@ function buildCommentTree(rows: JournalCommentRow[], usersMap: Map<string, Publi
       id: comment.id,
       content: comment.deleted_at ? null : comment.content,
       createdAt: comment.created_at,
+      created_at: comment.created_at,
       deletedAt: comment.deleted_at,
+      deleted_at: comment.deleted_at,
       parentId: comment.parent_comment_id,
       authorId: comment.author_id,
+      author_id: comment.author_id,
       targetUserId: comment.target_user_id,
       author: usersMap.get(comment.author_id) ?? null,
       targetUser: comment.target_user_id ? usersMap.get(comment.target_user_id) ?? null : null,
+      parent_comment_id: comment.parent_comment_id,
     };
 
     if (!comment.parent_comment_id) {

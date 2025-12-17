@@ -19,10 +19,15 @@ type CommentNode = {
   id: string;
   content: string | null;
   createdAt: string;
+  created_at: string;
   deletedAt: string | null;
+  deleted_at: string | null;
   parentId: string | null;
+  parent_comment_id: string | null;
   author: PublicUser | null;
   targetUser: PublicUser | null;
+  authorId: string;
+  author_id: string;
   replies?: CommentNode[];
 };
 
@@ -131,8 +136,11 @@ export async function GET(request: Request) {
       title: post.title,
       content: post.content,
       visibility: post.visibility,
+      created_at: post.created_at,
+      updated_at: post.updated_at,
       createdAt: post.created_at,
       updatedAt: post.updated_at,
+      author_id: post.author_id,
       author: author
         ? {
             id: author.id,
@@ -211,6 +219,9 @@ export async function POST(request: Request) {
     likes: { count: 0, user_ids: [] },
     comments_count: 0,
     comments: [],
+    author_id: post.author_id,
+    created_at: post.created_at,
+    updated_at: post.updated_at,
     media: (mediaUrls ?? []).map((url, index) => ({ id: `${post.id}-${index}`, url, position: index })),
   });
 }
@@ -289,10 +300,15 @@ function buildCommentTree(comments: JournalCommentRow[], usersMap: Map<string, P
       id: comment.id,
       content: comment.deleted_at ? null : comment.content,
       createdAt: comment.created_at,
+      created_at: comment.created_at,
       deletedAt: comment.deleted_at,
+      deleted_at: comment.deleted_at,
       parentId: comment.parent_comment_id,
+      parent_comment_id: comment.parent_comment_id,
       author: usersMap.get(comment.author_id) ?? null,
       targetUser: comment.target_user_id ? usersMap.get(comment.target_user_id) ?? null : null,
+      authorId: comment.author_id,
+      author_id: comment.author_id,
     };
 
     if (!comment.parent_comment_id) {

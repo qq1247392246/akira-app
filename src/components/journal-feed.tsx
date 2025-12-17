@@ -38,7 +38,7 @@ export function JournalFeed() {
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
-  
+
   // 无限滚动观察器
   const observerTarget = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -99,7 +99,7 @@ export function JournalFeed() {
         visibility: "public",
         mediaUrls,
       });
-      
+
       const postWithAuthor: DbJournalPost = {
         ...newPost,
         author: {
@@ -136,7 +136,7 @@ export function JournalFeed() {
   const handlePostDelete = (postId: string) => {
     setPosts(prev => prev.filter(p => p.id !== postId));
   };
-  
+
   const handleAddMediaUrl = () => {
     if (!mediaUrlInput.trim()) return;
     try {
@@ -227,7 +227,7 @@ export function JournalFeed() {
               <Button
                 type="button"
                 variant="outline"
-                className="shrink-0 border-white/30 text-white hover:bg-white/10"
+                className="shrink-0 border-white/30 bg-white/10 text-white hover:bg-white/20"
                 onClick={handleAddMediaUrl}
               >
                 <ImagePlus className="mr-2 h-4 w-4" />
@@ -261,11 +261,11 @@ export function JournalFeed() {
             </div>
             {mediaError && <p className="text-xs text-red-400">{mediaError}</p>}
             {mediaUrls.length > 0 && (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {mediaUrls.map((url, index) => (
                   <div
                     key={`${url}-${index}`}
-                    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5"
+                    className="group relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-white/5"
                     onClick={() => setLightboxImage({ url, alt: `图片预览 ${index + 1}` })}
                     role="button"
                     tabIndex={0}
@@ -280,18 +280,19 @@ export function JournalFeed() {
                     <img
                       src={url}
                       alt={`图片预览 ${index + 1}`}
-                      className="w-full max-h-[24rem] rounded-2xl object-contain transition duration-300 group-hover:scale-[1.01]"
+                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                       loading="lazy"
                       referrerPolicy="no-referrer"
                     />
                     <button
                       type="button"
-                      onClick={() => handleRemoveMediaUrl(index)}
-                      className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white/80 transition hover:bg-black/80"
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onClickCapture={(event) => event.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveMediaUrl(index);
+                      }}
+                      className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white/80 opacity-0 transition hover:bg-black/80 group-hover:opacity-100"
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <X className="h-3 w-3" />
                     </button>
                   </div>
                 ))}
@@ -324,9 +325,9 @@ export function JournalFeed() {
       {/* 列表区域 */}
       <div className="flex-1 space-y-4 pb-4">
         {posts.map((post) => (
-          <JournalItem 
-            key={post.id} 
-            post={post} 
+          <JournalItem
+            key={post.id}
+            post={post}
             currentUserId={sessionUser?.id}
             currentUserRole={sessionUser?.role}
             onUpdate={handlePostUpdate}
@@ -660,19 +661,30 @@ function JournalItem({
           )}
 
           {post.media && post.media.length > 0 && (
-            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            <div className={cn(
+              "mt-3 grid gap-2",
+              post.media.length === 1 ? "grid-cols-1 sm:max-w-[60%]" :
+                post.media.length === 2 || post.media.length === 4 ? "grid-cols-2 sm:max-w-[80%]" :
+                  "grid-cols-3"
+            )}>
               {post.media.map((media) => (
                 <button
                   key={media.id}
                   type="button"
                   onClick={() => onImagePreview?.(media.url, "日记图片")}
-                  className="group overflow-hidden rounded-2xl border border-white/10 bg-white/5 outline-none transition focus-visible:ring-2 focus-visible:ring-cyan-500/60"
+                  className={cn(
+                    "group relative overflow-hidden rounded-lg border border-white/10 bg-black/20 outline-none transition focus-visible:ring-2 focus-visible:ring-cyan-500/60",
+                    post.media!.length > 1 ? "aspect-square" : "w-full"
+                  )}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={media.url}
                     alt="日记图片"
-                    className="w-full max-h-[28rem] rounded-2xl object-contain transition duration-300 group-hover:scale-[1.01]"
+                    className={cn(
+                      "h-full w-full transition duration-500 group-hover:scale-105",
+                      post.media!.length === 1 ? "max-h-[500px] object-cover" : "object-cover"
+                    )}
                     loading="lazy"
                     referrerPolicy="no-referrer"
                   />

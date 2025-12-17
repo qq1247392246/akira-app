@@ -270,3 +270,24 @@ export async function reviewApproval(
     body: JSON.stringify(payload),
   });
 }
+
+// --- Profile API ---
+
+export async function updateProfile(payload: {
+  userId: string;
+  displayName?: string;
+  signature?: string;
+  avatarUrl?: string;
+}) {
+  return apiFetch<{
+    id: string;
+    username: string;
+    display_name: string;
+    role: number;
+    avatar_url: string | null;
+    signature: string | null;
+  }>("/api/user/profile", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}

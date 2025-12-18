@@ -28,8 +28,8 @@ export type FriendEntry = {
     likes: number;
     comments: number;
     tags: number;
-    streak: number;
     orbit: string;
+    companionshipDays: number;
   };
   accent: string;
   neon: string;

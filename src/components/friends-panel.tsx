@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import {
   Award,
+  Calendar,
   Crown,
   Heart,
   Palette,
@@ -176,11 +177,14 @@ export function FriendsPanel() {
 
   const handleProfileUpdate = useCallback(
     async (friendId: string, updates: ProfileUpdates) => {
-      if (!isAdmin) return;
+      if (!sessionUser) return;
+      const canEdit = isAdmin || sessionUser.id === friendId;
+      if (!canEdit) return;
       try {
         const updated = await updateFriend(friendId, {
           ...updates,
-          actorRole: 1,
+          actorRole: isAdmin ? 1 : 0,
+          actorId: sessionUser.id,
           viewerId,
         });
         replaceFriend(updated);
@@ -188,7 +192,7 @@ export function FriendsPanel() {
         console.error("更新朋友资料失败", err);
       }
     },
-    [isAdmin, replaceFriend, viewerId]
+    [isAdmin, replaceFriend, sessionUser, viewerId]
   );
 
   const handleAliasUpdate = (friendId: string, alias: string) => {
@@ -461,7 +465,7 @@ export function FriendsPanel() {
         </div>
       </section>
 
-      <section className="space-y-6">
+      <section className="space-y-16">
         {error && (
           <div className="rounded-2xl border border-rose-500/40 bg-rose-500/20 px-4 py-3 text-sm text-rose-100">
             {error}
@@ -486,6 +490,7 @@ export function FriendsPanel() {
               friend={friend}
               canInteract={canInteract}
               canAdmin={isAdmin}
+              isSelf={sessionUser?.id === friend.id}
               onToggleTagLike={handleTagToggle}
               onAddTag={handleAddTag}
               onRemoveTag={handleRemoveTag}
@@ -507,6 +512,7 @@ function FriendCard({
   friend,
   canInteract,
   canAdmin,
+  isSelf,
   onToggleTagLike,
   onAddTag,
   onRemoveTag,
@@ -521,6 +527,7 @@ function FriendCard({
   friend: FriendEntry;
   canInteract: boolean;
   canAdmin: boolean;
+  isSelf: boolean;
   onToggleTagLike: (friendId: string, tagId: string) => void;
   onAddTag: (friendId: string, label: string) => void;
   onRemoveTag: (friendId: string, tagId: string) => void;
@@ -552,6 +559,8 @@ function FriendCard({
     },
     [friend.id, registerCardRef]
   );
+
+  const canEditProfile = canAdmin || isSelf;
 
   // 删除确认状态
   const [deletingTagId, setDeletingTagId] = useState<string | null>(null);
@@ -687,7 +696,7 @@ function FriendCard({
                   <span className="rounded-full border border-white/20 bg-white/10 px-3 py-0.5 text-xs uppercase tracking-[0.2em] text-fuchsia-200">
                     {friend.alias || "未设置称号"}
                   </span>
-                  {canAdmin && (
+                  {canEditProfile && (
                     <button
                       className="rounded-full border border-white/10 bg-white/5 p-1 text-white/50 transition hover:border-white/30 hover:text-white"
                       onClick={() => setEditingAlias(true)}
@@ -724,7 +733,7 @@ function FriendCard({
               ) : (
                 <>
                   <span>{friend.location || "地点待补充"}</span>
-                  {canAdmin && (
+                  {canEditProfile && (
                     <button
                       className="rounded-full border border-white/10 bg-white/5 p-1 text-white/50 transition hover:border-white/30 hover:text-white"
                       onClick={() => setEditingLocation(true)}
@@ -853,7 +862,7 @@ function FriendCard({
             ) : (
               <div className="flex items-start justify-between gap-3">
                 <p className="flex-1 text-sm text-white/70">{friend.signature || "还没有签名"}</p>
-                {canAdmin && (
+                {canEditProfile && (
                   <button
                     className="rounded-full border border-white/10 bg-white/5 p-1 text-white/50 transition hover:border-white/30 hover:text-white"
                     onClick={() => {
@@ -870,7 +879,7 @@ function FriendCard({
               <StatPill label="活跃度" value={friend.stats.activityScore} icon={<TrendingUp className="h-4 w-4" />} />
               <StatPill label="累计喜欢" value={friend.stats.likes} icon={<Heart className="h-4 w-4" />} />
               <StatPill label="交流次数" value={friend.stats.comments} icon={<MessageIcon />} />
-              <StatPill label="连续活跃" value={`${friend.stats.streak} 天`} icon={<Sparkles className="h-4 w-4" />} />
+              <StatPill label="陪伴天数" value={`${friend.stats.companionshipDays} 天`} icon={<Calendar className="h-4 w-4" />} />
             </div>
           </div>
 
@@ -987,7 +996,7 @@ function FriendCard({
               <span className="ml-auto text-xs uppercase tracking-[0.3em] text-cyan-200">
                 {friend.customAreaHighlight || ""}
               </span>
-              {canAdmin && !editingStory && (
+              {canEditProfile && !editingStory && (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -1049,7 +1058,7 @@ function FriendCard({
             )}
           </div>
 
-          {canAdmin && (
+          {canEditProfile && (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-white/60">

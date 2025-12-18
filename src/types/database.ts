@@ -119,6 +119,34 @@ export type Database = {
         }
       ];
     };
+      user_daily_activity: {
+        Row: {
+          id: string;
+          user_id: string;
+          activity_date: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          activity_date?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          activity_date?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "user_daily_activity_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       user_tag_like_events: {
         Row: {
           id: string;

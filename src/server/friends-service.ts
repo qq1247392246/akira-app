@@ -25,6 +25,7 @@ type UserRow = {
   signature: string | null;
   role: number;
   is_active: boolean;
+  created_at: string;
 };
 
 type FriendProfileUpdatePayload = {
@@ -66,7 +67,7 @@ export async function fetchFriendsFromDb(viewerId?: string, userId?: string): Pr
   const supabase = getSupabaseAdmin();
   let userQuery = supabase
     .from("users")
-    .select("id, username, display_name, avatar_url, signature, role, is_active")
+    .select("id, username, display_name, avatar_url, signature, role, is_active, created_at")
     .eq("is_active", true);
 
   if (userId) {
@@ -90,6 +91,13 @@ export async function fetchFriendsFromDb(viewerId?: string, userId?: string): Pr
     await createDefaultProfiles(missingUsers);
     profiles = await fetchProfiles(userIds);
   }
+
+  const {
+    postsCountMap,
+    likesMap,
+    commentsCountMap,
+    activityDayMap,
+  } = await collectEngagementStats(userIds);
 
   const [badges, tags] = await Promise.all([fetchBadges(userIds), fetchTags(userIds)]);
   const badgesMap = badges.reduce<Record<string, FriendBadge[]>>((acc, badge) => {
@@ -119,9 +127,20 @@ export async function fetchFriendsFromDb(viewerId?: string, userId?: string): Pr
       const friendTags = (tagsMap[user.id] ?? []).sort(
         (a, b) => b.likes - a.likes || b.createdAt.localeCompare(a.createdAt)
       );
-      const likesSum = friendTags.reduce((sum, tag) => sum + tag.likes, 0);
+      const likesSum = likesMap.get(user.id) ?? 0;
+      const postCount = postsCountMap.get(user.id) ?? 0;
+      const commentCount = commentsCountMap.get(user.id) ?? 0;
+      const activityDays = activityDayMap.get(user.id) ?? 0;
+      const companionshipDays = computeCompanionshipDays(user.created_at);
       const badgesList = badgesMap[user.id] ?? [];
       const palette = pickAccent(user.id, index);
+      const activityScore =
+        computeActivityScore({
+          posts: postCount,
+          comments: commentCount,
+          likes: likesSum,
+          activityDays,
+        }) ?? profile?.activity_score ?? defaultScore(user.id);
 
       return {
         id: user.id,
@@ -134,12 +153,12 @@ export async function fetchFriendsFromDb(viewerId?: string, userId?: string): Pr
         location: profile?.location ?? "",
         badges: badgesList,
         stats: {
-          activityScore: profile?.activity_score ?? defaultScore(user.id),
+          activityScore,
           likes: likesSum,
-          comments: profile?.comments ?? 0,
+          comments: postCount + commentCount,
           tags: friendTags.length,
-          streak: profile?.streak ?? 0,
           orbit: profile?.orbit_label ?? defaultOrbitLabel(user.id),
+          companionshipDays,
         },
         accent: profile?.accent_class ?? palette.accent,
         neon: profile?.neon_class ?? palette.neon,
@@ -315,6 +334,82 @@ export async function removeFriendBadge(
   }
   const [friend] = await fetchFriendsFromDb(viewerId, friendId);
   return friend ?? null;
+}
+
+type PostWithLikesRow = {
+  id: string;
+  author_id: string;
+  journal_likes: Array<{ count: number | null }> | null;
+};
+
+type ActivityRow = {
+  user_id: string;
+  activity_date: string;
+};
+
+async function collectEngagementStats(userIds: string[]) {
+  const empty = {
+    postsCountMap: new Map<string, number>(),
+    likesMap: new Map<string, number>(),
+    commentsCountMap: new Map<string, number>(),
+    activityDayMap: new Map<string, number>(),
+  };
+  if (userIds.length === 0) {
+    return empty;
+  }
+  const supabase = getSupabaseAdmin();
+  const [postsResult, commentsResult, activityResult] = await Promise.all([
+    supabase
+      .from("journal_posts")
+      .select("id, author_id, journal_likes(count)")
+      .in("author_id", userIds),
+    supabase
+      .from("journal_comments")
+      .select("author_id")
+      .in("author_id", userIds),
+    supabase
+      .from("user_daily_activity")
+      .select("user_id, activity_date")
+      .in("user_id", userIds),
+  ]);
+  if (postsResult.error) {
+    throw new Error(`加载动态信息失败：${postsResult.error.message}`);
+  }
+  if (commentsResult.error) {
+    throw new Error(`加载评论信息失败：${commentsResult.error.message}`);
+  }
+  if (activityResult.error) {
+    throw new Error(`加载登录活跃信息失败：${activityResult.error.message}`);
+  }
+
+  const postsCountMap = new Map<string, number>();
+  const likesMap = new Map<string, number>();
+  (postsResult.data as PostWithLikesRow[] | null)?.forEach((post) => {
+    postsCountMap.set(post.author_id, (postsCountMap.get(post.author_id) ?? 0) + 1);
+    const likeCount = post.journal_likes?.[0]?.count ?? 0;
+    likesMap.set(post.author_id, (likesMap.get(post.author_id) ?? 0) + (likeCount ?? 0));
+  });
+
+  const commentsCountMap = new Map<string, number>();
+  (commentsResult.data ?? []).forEach((row) => {
+    commentsCountMap.set(row.author_id, (commentsCountMap.get(row.author_id) ?? 0) + 1);
+  });
+
+  const activityDayMap = new Map<string, number>();
+  const groupedDates = new Map<string, Set<string>>();
+  (activityResult.data as ActivityRow[] | null)?.forEach((row) => {
+    const normalized = normalizeDateString(row.activity_date);
+    if (!groupedDates.has(row.user_id)) {
+      groupedDates.set(row.user_id, new Set());
+    }
+    groupedDates.get(row.user_id)!.add(normalized);
+  });
+  groupedDates.forEach((dates, userId) => {
+    const uniqueDates = Array.from(dates);
+    activityDayMap.set(userId, uniqueDates.length);
+  });
+
+  return { postsCountMap, likesMap, commentsCountMap, activityDayMap };
 }
 
 async function fetchBadges(
@@ -497,6 +592,29 @@ function pickAccent(seed: string, fallbackIndex: number) {
   return ACCENT_PALETTE[hash % ACCENT_PALETTE.length];
 }
 
+function computeActivityScore({
+  posts,
+  comments,
+  likes,
+  activityDays,
+}: {
+  posts: number;
+  comments: number;
+  likes: number;
+  activityDays: number;
+}): number {
+  const weighted =
+    posts * 6 +
+    comments * 4 +
+    likes * 2 +
+    activityDays * 5;
+  if (weighted <= 0) {
+    return 0;
+  }
+  const normalized = Math.min(100, Math.round(Math.sqrt(weighted) * 5));
+  return normalized;
+}
+
 function defaultScore(seed: string) {
   const hash = hashString(seed);
   return 60 + (hash % 40);
@@ -514,4 +632,48 @@ function hashString(value: string) {
     hash |= 0;
   }
   return Math.abs(hash);
+}
+
+function computeCompanionshipDays(createdAt?: string | null): number {
+  if (!createdAt) return 0;
+  const createdDate = new Date(createdAt);
+  if (Number.isNaN(createdDate.getTime())) {
+    return 0;
+  }
+  const start = startOfUtcDay(createdDate);
+  const today = startOfUtcDay(new Date());
+  const diff = Math.floor((today.getTime() - start.getTime()) / 86_400_000);
+  return diff >= 0 ? diff + 1 : 0;
+}
+
+function normalizeDateString(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value.slice(0, 10);
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function computeCurrentStreak(dateStrings: string[]): number {
+  if (!dateStrings.length) return 0;
+  const normalizedSet = new Set(dateStrings.map(normalizeDateString));
+  let streak = 0;
+  let cursor = normalizeDateString(new Date().toISOString());
+  while (normalizedSet.has(cursor)) {
+    streak += 1;
+    cursor = shiftDateString(cursor, -1);
+  }
+  return streak;
+}
+
+function shiftDateString(dateString: string, offsetDays: number): string {
+  const date = new Date(`${dateString}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
+
+function startOfUtcDay(date: Date): Date {
+  const clone = new Date(date);
+  clone.setUTCHours(0, 0, 0, 0);
+  return clone;
 }

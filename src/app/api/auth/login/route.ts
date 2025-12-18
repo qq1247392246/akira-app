@@ -61,6 +61,14 @@ export async function POST(request: Request) {
       signature: userRecord.signature,
     };
 
+    const today = new Date().toISOString().slice(0, 10);
+    await supabase
+      .from("user_daily_activity")
+      .upsert(
+        { user_id: userRecord.id, activity_date: today },
+        { onConflict: "user_id,activity_date" }
+      );
+
     return NextResponse.json({ user });
   } catch (error) {
     console.error("登录流程异常", error);

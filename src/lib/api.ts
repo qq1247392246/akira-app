@@ -319,7 +319,8 @@ export async function updateFriend(
     accentClass?: string | null;
     neonClass?: string | null;
     signature?: string | null;
-    actorRole: number;
+    actorRole?: number;
+    actorId?: string;
     viewerId?: string;
   }
 ) {

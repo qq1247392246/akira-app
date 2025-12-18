@@ -103,16 +103,50 @@ export type Database = {
           tag_id?: string;
           user_id?: string;
           created_at?: string;
+      };
+      Relationships: [
+        {
+          foreignKeyName: "user_tag_likes_tag_id_fkey";
+          columns: ["tag_id"];
+          referencedRelation: "user_tags";
+          referencedColumns: ["id"];
+        },
+        {
+          foreignKeyName: "user_tag_likes_user_id_fkey";
+          columns: ["user_id"];
+          referencedRelation: "users";
+          referencedColumns: ["id"];
+        }
+      ];
+    };
+      user_tag_like_events: {
+        Row: {
+          id: string;
+          tag_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tag_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tag_id?: string;
+          user_id?: string;
+          created_at?: string;
         };
         Relationships: [
           {
-            foreignKeyName: "user_tag_likes_tag_id_fkey";
+            foreignKeyName: "user_tag_like_events_tag_id_fkey";
             columns: ["tag_id"];
             referencedRelation: "user_tags";
             referencedColumns: ["id"];
           },
           {
-            foreignKeyName: "user_tag_likes_user_id_fkey";
+            foreignKeyName: "user_tag_like_events_user_id_fkey";
             columns: ["user_id"];
             referencedRelation: "users";
             referencedColumns: ["id"];

@@ -36,6 +36,7 @@ type FriendProfileUpdatePayload = {
   customAreaHighlight?: string | null;
   accentClass?: string | null;
   neonClass?: string | null;
+  signature?: string | null;
 };
 
 const ACCENT_PALETTE = [
@@ -156,37 +157,48 @@ export async function updateFriendProfile(
   payload: FriendProfileUpdatePayload
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
-  const updates: Record<string, unknown> = {};
+  const profileUpdates: Record<string, unknown> = {};
+  const userUpdates: Record<string, unknown> = {};
   if (typeof payload.alias !== "undefined") {
-    updates.alias = payload.alias;
+    profileUpdates.alias = payload.alias;
   }
   if (typeof payload.isAdmin !== "undefined" && payload.isAdmin !== null) {
-    updates.is_admin = payload.isAdmin;
+    profileUpdates.is_admin = payload.isAdmin;
   }
   if (typeof payload.location !== "undefined") {
-    updates.location = payload.location;
+    profileUpdates.location = payload.location;
   }
   if (typeof payload.story !== "undefined") {
-    updates.story = payload.story;
+    profileUpdates.story = payload.story;
   }
   if (typeof payload.customAreaTitle !== "undefined") {
-    updates.custom_area_title = payload.customAreaTitle;
+    profileUpdates.custom_area_title = payload.customAreaTitle;
   }
   if (typeof payload.customAreaHighlight !== "undefined") {
-    updates.custom_area_highlight = payload.customAreaHighlight;
+    profileUpdates.custom_area_highlight = payload.customAreaHighlight;
   }
   if (typeof payload.accentClass !== "undefined") {
-    updates.accent_class = payload.accentClass;
+    profileUpdates.accent_class = payload.accentClass;
   }
   if (typeof payload.neonClass !== "undefined") {
-    updates.neon_class = payload.neonClass;
+    profileUpdates.neon_class = payload.neonClass;
   }
-  if (Object.keys(updates).length === 0) {
-    return;
+  if (typeof payload.signature !== "undefined") {
+    userUpdates.signature = payload.signature;
   }
-  const { error } = await supabase.from("friend_profiles").update(updates).eq("user_id", friendId);
-  if (error) {
-    throw new Error(`更新朋友资料失败：${error.message}`);
+
+  if (Object.keys(profileUpdates).length > 0) {
+    const { error } = await supabase.from("friend_profiles").update(profileUpdates).eq("user_id", friendId);
+    if (error) {
+      throw new Error(`更新朋友资料失败：${error.message}`);
+    }
+  }
+
+  if (Object.keys(userUpdates).length > 0) {
+    const { error } = await supabase.from("users").update(userUpdates).eq("id", friendId);
+    if (error) {
+      throw new Error(`更新用户签名失败：${error.message}`);
+    }
   }
 }
 
@@ -232,19 +244,17 @@ export async function toggleFriendTagLike(
   if (!tagOwner || tagOwner !== friendId) {
     throw new Error("标签不存在或不属于该用户");
   }
-  const { data: existing, error: existingError } = await supabase
+  const { error: stateError } = await supabase
     .from("user_tag_likes")
-    .select("id")
-    .eq("tag_id", tagId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (existingError) {
-    throw new Error(`查询标签点赞失败：${existingError.message}`);
+    .upsert({ tag_id: tagId, user_id: userId }, { onConflict: "tag_id,user_id" });
+  if (stateError) {
+    throw new Error(`记录点赞状态失败：${stateError.message}`);
   }
-  if (existing) {
-    await supabase.from("user_tag_likes").delete().eq("id", existing.id);
-  } else {
-    await supabase.from("user_tag_likes").insert({ tag_id: tagId, user_id: userId });
+  const { error: eventError } = await supabase
+    .from("user_tag_like_events")
+    .insert({ tag_id: tagId, user_id: userId });
+  if (eventError) {
+    throw new Error(`记录标签点赞失败：${eventError.message}`);
   }
   const [friend] = await fetchFriendsFromDb(viewerId, friendId);
   return friend ?? null;
@@ -348,12 +358,14 @@ async function fetchTags(
   ]);
 
   return (tagRows ?? []).map((row) => {
-    const likedBy = likesMap.get(row.id) ?? new Set<string>();
+    const stats = likesMap.get(row.id);
+    const likedBy = stats?.likedBy ?? new Set<string>();
+    const likes = stats?.count ?? 0;
     return {
       userId: row.target_user_id,
       id: row.id,
       label: row.label,
-      likes: likedBy.size,
+      likes,
       createdBy: creatorMap.get(row.created_by) ?? "匿名用户",
       createdAt: row.created_at,
       likedBy,
@@ -374,22 +386,39 @@ async function fetchDisplayNames(userIds: string[]): Promise<Map<string, string>
   return new Map((data ?? []).map((row) => [row.id, row.display_name]));
 }
 
-async function fetchTagLikes(tagIds: string[]): Promise<Map<string, Set<string>>> {
-  const map = new Map<string, Set<string>>();
+type TagLikeStats = { count: number; likedBy: Set<string> };
+
+async function fetchTagLikes(tagIds: string[]): Promise<Map<string, TagLikeStats>> {
+  const map = new Map<string, TagLikeStats>();
   if (tagIds.length === 0) return map;
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("user_tag_likes")
-    .select("tag_id, user_id")
-    .in("tag_id", tagIds);
-  if (error) {
-    throw new Error(`加载标签点赞失败：${error.message}`);
+  const [{ data: eventRows, error: eventError }, { data: stateRows, error: stateError }] = await Promise.all([
+    supabase
+      .from("user_tag_like_events")
+      .select("tag_id, user_id")
+      .in("tag_id", tagIds),
+    supabase
+      .from("user_tag_likes")
+      .select("tag_id, user_id")
+      .in("tag_id", tagIds),
+  ]);
+  if (eventError) {
+    throw new Error(`加载标签点赞记录失败：${eventError.message}`);
   }
-  for (const row of data ?? []) {
+  if (stateError) {
+    throw new Error(`加载标签点赞状态失败：${stateError.message}`);
+  }
+  for (const row of eventRows ?? []) {
     if (!map.has(row.tag_id)) {
-      map.set(row.tag_id, new Set());
+      map.set(row.tag_id, { count: 0, likedBy: new Set<string>() });
     }
-    map.get(row.tag_id)!.add(row.user_id);
+    map.get(row.tag_id)!.count += 1;
+  }
+  for (const row of stateRows ?? []) {
+    if (!map.has(row.tag_id)) {
+      map.set(row.tag_id, { count: 0, likedBy: new Set<string>() });
+    }
+    map.get(row.tag_id)!.likedBy.add(row.user_id);
   }
   return map;
 }

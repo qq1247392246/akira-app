@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSession } from "@/components/session-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +44,7 @@ type ProfileUpdates = {
   customAreaHighlight?: string | null;
   accentClass?: string | null;
   neonClass?: string | null;
+  signature?: string | null;
 };
 
 const rankingModes: { id: RankingMetric; label: string; description: string }[] = [
@@ -104,6 +105,8 @@ export function FriendsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [rankingMetric, setRankingMetric] = useState<RankingMetric>("activity");
   const [searchQuery, setSearchQuery] = useState("");
+  const friendCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const pendingScrollId = useRef<string | null>(null);
 
   const canInteract = Boolean(sessionUser);
   const isAdmin = sessionUser?.role === 1;
@@ -151,7 +154,7 @@ export function FriendsPanel() {
 
   const filteredFriends = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return friends;
+    if (!q) return [...friends];
     return friends.filter((friend) => {
       const haystack = [
         friend.displayName,
@@ -268,6 +271,73 @@ export function FriendsPanel() {
   const handleThemeUpdate = async (friendId: string, accentClass: string | null, neonClass: string | null) => {
     await handleProfileUpdate(friendId, { accentClass, neonClass });
   };
+
+  const registerFriendCard = useCallback((friendId: string, node: HTMLDivElement | null) => {
+    if (node) {
+      friendCardRefs.current[friendId] = node;
+    } else {
+      delete friendCardRefs.current[friendId];
+    }
+  }, []);
+
+  const getScrollContainer = useCallback((node: HTMLElement | null): HTMLElement | Window | null => {
+    if (typeof window === "undefined" || !node) return null;
+    let parent = node.parentElement;
+    while (parent) {
+      const style = window.getComputedStyle(parent);
+      const overflowY = style?.overflowY;
+      const isScrollable = /(auto|scroll|overlay)/.test(overflowY);
+      if (isScrollable && parent.scrollHeight > parent.clientHeight) {
+        return parent;
+      }
+      parent = parent.parentElement;
+    }
+    return window;
+  }, []);
+
+  const focusFriendCard = useCallback(
+    (friendId: string) => {
+      const node = friendCardRefs.current[friendId];
+      if (!node || typeof window === "undefined") return false;
+
+      const container = getScrollContainer(node);
+      if (container && container !== window && container instanceof HTMLElement) {
+        const containerRect = container.getBoundingClientRect();
+        const nodeRect = node.getBoundingClientRect();
+        const offset = 48;
+        const targetTop = container.scrollTop + (nodeRect.top - containerRect.top) - offset;
+        container.scrollTo({ top: Math.max(targetTop, 0), behavior: "smooth" });
+      } else {
+        node.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      node.focus?.({ preventScroll: true });
+      return true;
+    },
+    [getScrollContainer]
+  );
+
+  const scrollToFriendCard = useCallback(
+    (friendId: string) => {
+      if (focusFriendCard(friendId)) {
+        return;
+      }
+      pendingScrollId.current = friendId;
+      if (searchQuery) {
+        setSearchQuery("");
+      } else {
+        requestAnimationFrame(() => focusFriendCard(friendId));
+      }
+    },
+    [focusFriendCard, searchQuery]
+  );
+
+  useEffect(() => {
+    if (!pendingScrollId.current) return;
+    const success = focusFriendCard(pendingScrollId.current);
+    if (success) {
+      pendingScrollId.current = null;
+    }
+  }, [filteredFriends, focusFriendCard]);
   return (
     <div className="space-y-8 text-white">
       <section className="rounded-[32px] border border-white/15 bg-gradient-to-br from-[#120c1f]/80 via-[#0c1824]/80 to-[#09111f]/80 p-6 backdrop-blur-2xl shadow-2xl">
@@ -290,8 +360,8 @@ export function FriendsPanel() {
                 key={mode.id}
                 onClick={() => setRankingMetric(mode.id)}
                 className={cn(
-                  "rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-white/70 shadow-sm transition hover:border-white/50 hover:text-white",
-                  rankingMetric === mode.id && "bg-white/15 text-white border-white/50 shadow-lg"
+                  "rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-white/70 shadow-sm transition-all duration-300 hover:scale-105 hover:bg-white/20 hover:border-white/60 hover:text-white hover:shadow-[0_0_15px_rgba(255,255,255,0.15)]",
+                  rankingMetric === mode.id && "bg-white/20 text-white border-white/60 shadow-[0_0_20px_rgba(255,255,255,0.2)] scale-105"
                 )}
                 variant="ghost"
               >
@@ -322,35 +392,69 @@ export function FriendsPanel() {
           {ranking.map((friend, index) => (
             <div
               key={friend.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => scrollToFriendCard(friend.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  scrollToFriendCard(friend.id);
+                }
+              }}
               className={cn(
-                "relative overflow-hidden rounded-3xl border border-white/15 bg-white/5 p-5 backdrop-blur-xl transition hover:border-white/30 hover:bg-white/10",
+                "group relative overflow-hidden rounded-3xl border border-white/15 bg-white/10 p-5 backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:border-white/30 hover:bg-white/15 hover:shadow-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 cursor-pointer",
                 friend.neon
               )}
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-30" />
-              <div className="relative flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-lg font-bold text-white/80 shadow-inner">
-                  #{index + 1}
-                </div>
-                <div>
-                  <p className="text-lg font-semibold">{friend.displayName}</p>
-                  <p className="text-xs uppercase tracking-[0.3em] text-cyan-200">{friend.stats.orbit}</p>
-                </div>
-                {index === 0 ? (
-                  <Crown className="ml-auto h-6 w-6 text-amber-300 drop-shadow-lg" />
-                ) : (
-                  <Star className="ml-auto h-5 w-5 text-white/60" />
-                )}
+              {/* Background Accent Glow - Similar to FriendCard but adjusted for smaller size */}
+              <div className="pointer-events-none absolute inset-0 opacity-40 transition-opacity duration-500 group-hover:opacity-60">
+                <div className={cn("absolute inset-0 blur-[80px]", `bg-gradient-to-br ${friend.accent}`)} />
               </div>
-              <div className="mt-4 flex items-center justify-between text-sm text-white/70">
-                <span>{rankingModes.find((m) => m.id === rankingMetric)?.description}</span>
-                <span className="text-lg font-bold text-white">
-                  {rankingMetric === "activity"
-                    ? friend.stats.activityScore
-                    : rankingMetric === "likes"
-                      ? friend.stats.likes
-                      : friend.stats.comments}
-                </span>
+
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+
+              {/* Rank Badge Background Effect */}
+              <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-gradient-to-br from-white/10 to-transparent blur-2xl transition-all group-hover:from-white/20" />
+
+              <div className="relative flex items-center gap-4">
+                <div className="relative">
+                  <Avatar className="h-14 w-14 border-2 border-white/20 shadow-lg transition-transform duration-300 group-hover:scale-105">
+                    <AvatarImage src={friend.avatarUrl} alt={friend.displayName} />
+                    <AvatarFallback className="bg-slate-800 text-white/70">{friend.displayName.slice(0, 2)}</AvatarFallback>
+                  </Avatar>
+                  <div className={cn(
+                    "absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold shadow-lg ring-2 ring-[#0c1824]",
+                    index === 0 ? "bg-amber-300 text-amber-900" :
+                      index === 1 ? "bg-slate-300 text-slate-900" :
+                        index === 2 ? "bg-orange-300 text-orange-900" : "bg-white/20 text-white"
+                  )}>
+                    {index + 1}
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-lg font-bold text-white group-hover:text-cyan-200 transition-colors">{friend.displayName}</p>
+                    {index === 0 && <Crown className="h-4 w-4 text-amber-300 drop-shadow-lg" />}
+                  </div>
+                  <p className="truncate text-xs uppercase tracking-[0.2em] text-white/40 group-hover:text-white/60 transition-colors">
+                    {friend.stats.orbit}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center justify-between rounded-xl bg-black/20 px-4 py-3 backdrop-blur-sm">
+                <span className="text-xs text-white/50">{rankingModes.find((m) => m.id === rankingMetric)?.label}</span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-xl font-black text-white tracking-tight">
+                    {rankingMetric === "activity"
+                      ? friend.stats.activityScore
+                      : rankingMetric === "likes"
+                        ? friend.stats.likes
+                        : friend.stats.comments}
+                  </span>
+                  <span className="text-[10px] uppercase text-white/30">PTS</span>
+                </div>
               </div>
             </div>
           ))}
@@ -391,6 +495,7 @@ export function FriendsPanel() {
               onAddBadge={handleAddBadge}
               onRemoveBadge={handleRemoveBadge}
               onUpdateTheme={handleThemeUpdate}
+              registerCardRef={registerFriendCard}
             />
           ))
         )}
@@ -411,6 +516,7 @@ function FriendCard({
   onAddBadge,
   onRemoveBadge,
   onUpdateTheme,
+  registerCardRef,
 }: {
   friend: FriendEntry;
   canInteract: boolean;
@@ -424,6 +530,7 @@ function FriendCard({
   onAddBadge: (friendId: string, label: string, colorClass: string) => void;
   onRemoveBadge: (friendId: string, badgeId: string) => void;
   onUpdateTheme: (friendId: string, accentClass: string | null, neonClass: string | null) => void;
+  registerCardRef: (friendId: string, node: HTMLDivElement | null) => void;
 }) {
   const [addingTag, setAddingTag] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
@@ -437,6 +544,33 @@ function FriendCard({
   const [customHighlightDraft, setCustomHighlightDraft] = useState(friend.customAreaHighlight ?? "");
   const [badgeLabelDraft, setBadgeLabelDraft] = useState("");
   const [selectedBadgeColor, setSelectedBadgeColor] = useState(badgeColorOptions[0]?.className ?? "");
+  const [editingSignature, setEditingSignature] = useState(false);
+  const [signatureDraft, setSignatureDraft] = useState(friend.signature ?? "");
+  const setCardRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      registerCardRef(friend.id, node);
+    },
+    [friend.id, registerCardRef]
+  );
+
+  // 删除确认状态
+  const [deletingTagId, setDeletingTagId] = useState<string | null>(null);
+  const [deletingBadgeId, setDeletingBadgeId] = useState<string | null>(null);
+
+  // 自动清除删除确认状态
+  useEffect(() => {
+    if (deletingTagId) {
+      const timer = setTimeout(() => setDeletingTagId(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [deletingTagId]);
+
+  useEffect(() => {
+    if (deletingBadgeId) {
+      const timer = setTimeout(() => setDeletingBadgeId(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [deletingBadgeId]);
 
   useEffect(() => {
     setAliasDraft(friend.alias ?? "");
@@ -451,6 +585,10 @@ function FriendCard({
     setCustomTitleDraft(friend.customAreaTitle ?? "");
     setCustomHighlightDraft(friend.customAreaHighlight ?? "");
   }, [friend.story, friend.customAreaTitle, friend.customAreaHighlight]);
+
+  useEffect(() => {
+    setSignatureDraft(friend.signature ?? "");
+  }, [friend.signature]);
 
   const tagTotal = friend.tags.reduce((sum, tag) => sum + tag.likes, 0) || 1;
 
@@ -473,6 +611,11 @@ function FriendCard({
     setEditingStory(false);
   };
 
+  const handleSignatureSave = () => {
+    onUpdateProfile(friend.id, { signature: signatureDraft.trim() || null });
+    setEditingSignature(false);
+  };
+
   const handleAddTagClick = () => {
     if (!tagDraft.trim()) return;
     onAddTag(friend.id, tagDraft.trim());
@@ -489,12 +632,14 @@ function FriendCard({
 
   return (
     <article
+      ref={setCardRef}
+      tabIndex={-1}
       className={cn(
-        "relative overflow-hidden rounded-[32px] border border-white/15 bg-white/5 p-6 backdrop-blur-xl shadow-2xl transition hover:border-white/30 hover:bg-white/10",
+        "group relative overflow-hidden rounded-[32px] border border-white/15 bg-white/5 p-6 backdrop-blur-xl shadow-2xl transition-all duration-500 hover:scale-[1.01] hover:border-white/30 hover:bg-white/10 hover:shadow-cyan-900/20",
         friend.neon
       )}
     >
-      <div className="absolute inset-0 opacity-30">
+      <div className="absolute inset-0 opacity-30 transition-opacity duration-500 group-hover:opacity-50">
         <div className={cn("absolute inset-0 blur-[120px]", `bg-gradient-to-br ${friend.accent}`)} />
       </div>
 
@@ -594,16 +739,29 @@ function FriendCard({
           <div className="flex w-full flex-col gap-3">
             <div className="flex flex-wrap justify-center gap-2">
               {friend.badges.map((badge) => (
-                <div key={`${friend.id}-${badge.label}-${badge.id ?? "temp"}`} className="relative">
+                <div key={`${friend.id}-${badge.label}-${badge.id ?? "temp"}`} className="group/badge relative">
                   <Badge className={cn("border-none text-xs font-semibold text-white shadow-md", "bg-gradient-to-r", badge.color)}>
                     {badge.label}
                   </Badge>
                   {canAdmin && badge.id && (
                     <button
-                      className="absolute -right-1 -top-1 rounded-full bg-black/70 p-1 text-white/60 hover:text-white"
-                      onClick={() => onRemoveBadge(friend.id, badge.id as string)}
+                      className={cn(
+                        "absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full transition-all",
+                        deletingBadgeId === badge.id
+                          ? "bg-rose-500 text-white scale-110 z-10"
+                          : "bg-black/60 text-white/60 hover:bg-rose-500/80 hover:text-white opacity-0 group-hover/badge:opacity-100"
+                      )}
+                      onClick={() => {
+                        if (deletingBadgeId === badge.id) {
+                          onRemoveBadge(friend.id, badge.id as string);
+                          setDeletingBadgeId(null);
+                        } else {
+                          setDeletingBadgeId(badge.id as string);
+                        }
+                      }}
+                      title={deletingBadgeId === badge.id ? "确认删除" : "移除徽章"}
                     >
-                      <X className="h-3 w-3" />
+                      <X className="h-2.5 w-2.5" />
                     </button>
                   )}
                 </div>
@@ -632,7 +790,7 @@ function FriendCard({
                   <Input
                     value={badgeLabelDraft}
                     onChange={(event) => setBadgeLabelDraft(event.target.value)}
-                    placeholder="输入徽章名称"
+                    placeholder="新的徽章！"
                     className="h-9 flex-1 rounded-full border-white/20 bg-black/20 text-sm text-white placeholder:text-white/40 focus-visible:ring-cyan-400/40"
                     maxLength={16}
                   />
@@ -666,7 +824,48 @@ function FriendCard({
         </div>
         <div className="flex-1 space-y-6">
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4 shadow-inner">
-            <p className="text-sm text-white/70">{friend.signature}</p>
+            {editingSignature ? (
+              <div className="space-y-2">
+                <Textarea
+                  value={signatureDraft}
+                  onChange={(event) => setSignatureDraft(event.target.value)}
+                  placeholder="输入新的签名"
+                  className="min-h-[80px] rounded-2xl border-white/30 bg-white/5 text-sm text-white placeholder:text-white/40 focus-visible:ring-cyan-400/40"
+                  maxLength={140}
+                />
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-white/60 hover:text-white"
+                    onClick={() => {
+                      setEditingSignature(false);
+                      setSignatureDraft(friend.signature ?? "");
+                    }}
+                  >
+                    取消
+                  </Button>
+                  <Button size="sm" className="bg-cyan-500/80 text-white hover:bg-cyan-400" onClick={handleSignatureSave}>
+                    保存
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start justify-between gap-3">
+                <p className="flex-1 text-sm text-white/70">{friend.signature || "还没有签名"}</p>
+                {canAdmin && (
+                  <button
+                    className="rounded-full border border-white/10 bg-white/5 p-1 text-white/50 transition hover:border-white/30 hover:text-white"
+                    onClick={() => {
+                      setSignatureDraft(friend.signature ?? "");
+                      setEditingSignature(true);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
             <div className="mt-3 grid gap-3 md:grid-cols-4">
               <StatPill label="活跃度" value={friend.stats.activityScore} icon={<TrendingUp className="h-4 w-4" />} />
               <StatPill label="累计喜欢" value={friend.stats.likes} icon={<Heart className="h-4 w-4" />} />
@@ -704,14 +903,33 @@ function FriendCard({
                       <span
                         role="button"
                         tabIndex={-1}
-                        aria-label={`移除标签 ${tag.label}`}
-                        className="absolute -right-1 -top-1 rounded-full bg-black/50 p-1 text-white/40 opacity-0 transition group-hover/tag:opacity-100 hover:text-white"
+                        aria-label={deletingTagId === tag.id ? "确认删除" : `移除标签 ${tag.label}`}
+                        className={cn(
+                          "absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full transition-all duration-200",
+                          deletingTagId === tag.id
+                            ? "bg-rose-500 text-white opacity-100 scale-110 z-10"
+                            : "bg-black/50 text-white/40 opacity-0 group-hover/tag:opacity-100 hover:bg-rose-500/80 hover:text-white"
+                        )}
                         onClick={(event) => {
                           event.stopPropagation();
-                          onRemoveTag(friend.id, tag.id);
+                          if (deletingTagId === tag.id) {
+                            onRemoveTag(friend.id, tag.id);
+                            setDeletingTagId(null);
+                          } else {
+                            setDeletingTagId(tag.id);
+                          }
                         }}
                       >
-                        <X className="h-3 w-3" />
+                        {deletingTagId === tag.id ? (
+                          <CheckIcon />
+                        ) : (
+                          <X className="h-3 w-3" />
+                        )}
+                      </span>
+                    )}
+                    {deletingTagId === tag.id && (
+                      <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-black/80 px-2 py-0.5 text-[10px] text-white shadow-lg z-20 pointer-events-none">
+                        点击确认
                       </span>
                     )}
                     <span className="pointer-events-none absolute right-2 top-0 text-lg opacity-0 transition group-hover/tag:-translate-y-2 group-hover/tag:opacity-100">
@@ -903,5 +1121,3 @@ function CheckIcon() {
     </svg>
   );
 }
-
-

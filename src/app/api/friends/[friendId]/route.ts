@@ -17,27 +17,24 @@ export async function PATCH(
       customAreaHighlight,
       accentClass,
       neonClass,
+      signature,
       actorRole,
       viewerId,
     } = body ?? {};
+
     if (actorRole !== 1) {
       return NextResponse.json({ error: "需要管理员权限" }, { status: 403 });
     }
-    const normalizedAlias =
-      typeof alias === "string" ? alias.trim() : undefined;
+
+    const normalizedAlias = typeof alias === "string" ? alias.trim() : undefined;
+
     await updateFriendProfile(friendId, {
-      alias:
-        typeof normalizedAlias === "undefined"
-          ? undefined
-          : normalizedAlias || null,
+      alias: typeof normalizedAlias === "undefined" ? undefined : normalizedAlias || null,
       isAdmin: typeof isAdmin === "boolean" ? isAdmin : undefined,
-      location:
-        typeof location === "string" ? location.trim() || null : location,
+      location: typeof location === "string" ? location.trim() || null : location,
       story: typeof story === "string" ? story.trim() || null : story,
       customAreaTitle:
-        typeof customAreaTitle === "string"
-          ? customAreaTitle.trim() || null
-          : customAreaTitle,
+        typeof customAreaTitle === "string" ? customAreaTitle.trim() || null : customAreaTitle,
       customAreaHighlight:
         typeof customAreaHighlight === "string"
           ? customAreaHighlight.trim() || null
@@ -46,14 +43,20 @@ export async function PATCH(
         typeof accentClass === "string"
           ? accentClass
           : accentClass === null
-          ? null
-          : undefined,
+            ? null
+            : undefined,
       neonClass:
         typeof neonClass === "string"
           ? neonClass
           : neonClass === null
-          ? null
-          : undefined,
+            ? null
+            : undefined,
+      signature:
+        typeof signature === "string"
+          ? signature.trim() || null
+          : typeof signature === "undefined"
+            ? undefined
+            : signature,
     });
 
     const [friend] = await fetchFriendsFromDb(viewerId, friendId);

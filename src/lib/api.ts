@@ -318,6 +318,7 @@ export async function updateFriend(
     customAreaHighlight?: string | null;
     accentClass?: string | null;
     neonClass?: string | null;
+    signature?: string | null;
     actorRole: number;
     viewerId?: string;
   }

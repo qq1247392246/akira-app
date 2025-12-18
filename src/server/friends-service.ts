@@ -1,0 +1,414 @@
+import { getSupabaseAdmin } from "@/lib/supabase";
+import type { FriendEntry, FriendTag, FriendBadge } from "@/data/friends";
+
+type ProfileRow = {
+  user_id: string;
+  alias: string | null;
+  location: string | null;
+  accent_class: string | null;
+  neon_class: string | null;
+  story: string | null;
+  custom_area_title: string | null;
+  custom_area_highlight: string | null;
+  is_admin: boolean | null;
+  activity_score: number | null;
+  comments: number | null;
+  streak: number | null;
+  orbit_label: string | null;
+};
+
+type UserRow = {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  signature: string | null;
+  role: number;
+  is_active: boolean;
+};
+
+const ACCENT_PALETTE = [
+  {
+    accent: "from-indigo-500/30 via-blue-500/20 to-purple-500/30",
+    neon: "shadow-[0_0_32px_rgba(99,102,241,0.35)]",
+  },
+  {
+    accent: "from-rose-400/30 via-orange-300/30 to-amber-200/30",
+    neon: "shadow-[0_0_30px_rgba(251,113,133,0.4)]",
+  },
+  {
+    accent: "from-teal-400/30 via-cyan-400/30 to-blue-400/30",
+    neon: "shadow-[0_0_30px_rgba(45,212,191,0.4)]",
+  },
+  {
+    accent: "from-fuchsia-500/30 via-purple-400/30 to-blue-400/30",
+    neon: "shadow-[0_0_30px_rgba(217,70,239,0.35)]",
+  },
+  {
+    accent: "from-amber-300/20 via-yellow-200/30 to-orange-400/30",
+    neon: "shadow-[0_0_26px_rgba(251,191,36,0.4)]",
+  },
+];
+
+export async function fetchFriendsFromDb(viewerId?: string, userId?: string): Promise<FriendEntry[]> {
+  const supabase = getSupabaseAdmin();
+  let userQuery = supabase
+    .from("users")
+    .select("id, username, display_name, avatar_url, signature, role, is_active")
+    .eq("is_active", true);
+
+  if (userId) {
+    userQuery = userQuery.eq("id", userId);
+  }
+
+  const { data: users, error: userError } = await userQuery;
+  if (userError) {
+    throw new Error(`加载用户列表失败：${userError.message}`);
+  }
+  if (!users || users.length === 0) {
+    return [];
+  }
+
+  const userIds = users.map((user) => user.id);
+  let profiles = await fetchProfiles(userIds);
+  const existingProfileIds = new Set(profiles.map((profile) => profile.user_id));
+  const missingUsers = users.filter((user) => !existingProfileIds.has(user.id));
+
+  if (missingUsers.length > 0) {
+    await createDefaultProfiles(missingUsers);
+    profiles = await fetchProfiles(userIds);
+  }
+
+  const [badges, tags] = await Promise.all([fetchBadges(userIds), fetchTags(userIds)]);
+  const badgesMap = badges.reduce<Record<string, FriendBadge[]>>((acc, badge) => {
+    acc[badge.userId] = acc[badge.userId] || [];
+    acc[badge.userId].push({ label: badge.label, color: badge.color });
+    return acc;
+  }, {});
+
+  const tagsMap = tags.reduce<Record<string, FriendTag[]>>((acc, tag) => {
+    acc[tag.userId] = acc[tag.userId] || [];
+    acc[tag.userId].push({
+      id: tag.id,
+      label: tag.label,
+      likes: tag.likes,
+      createdBy: tag.createdBy,
+      createdAt: tag.createdAt,
+      likedByMe: viewerId ? tag.likedBy?.has(viewerId) ?? false : false,
+    });
+    return acc;
+  }, {});
+
+  const profileMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
+
+  return users
+    .map((user, index) => {
+      const profile = profileMap.get(user.id);
+      const friendTags = (tagsMap[user.id] ?? []).sort(
+        (a, b) => b.likes - a.likes || b.createdAt.localeCompare(a.createdAt)
+      );
+      const likesSum = friendTags.reduce((sum, tag) => sum + tag.likes, 0);
+      const badgesList = badgesMap[user.id] ?? [];
+      const palette = pickAccent(user.id, index);
+
+      return {
+        id: user.id,
+        username: user.username,
+        displayName: user.display_name,
+        alias: profile?.alias ?? user.display_name,
+        isAdmin: profile?.is_admin ?? (user.role === 1),
+        avatarUrl: user.avatar_url ?? "",
+        signature: user.signature ?? "",
+        location: profile?.location ?? "",
+        badges: badgesList,
+        stats: {
+          activityScore: profile?.activity_score ?? defaultScore(user.id),
+          likes: likesSum,
+          comments: profile?.comments ?? 0,
+          tags: friendTags.length,
+          streak: profile?.streak ?? 0,
+          orbit: profile?.orbit_label ?? defaultOrbitLabel(user.id),
+        },
+        accent: profile?.accent_class ?? palette.accent,
+        neon: profile?.neon_class ?? palette.neon,
+        tags: friendTags,
+        story: profile?.story ?? "",
+        customAreaTitle: profile?.custom_area_title ?? "待补完",
+        customAreaHighlight: profile?.custom_area_highlight ?? "",
+      } satisfies FriendEntry;
+    })
+    .sort((a, b) => b.stats.activityScore - a.stats.activityScore);
+}
+
+export async function updateFriendProfile(
+  friendId: string,
+  payload: { alias?: string | null; isAdmin?: boolean | null }
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const updates: Record<string, unknown> = {};
+  if (typeof payload.alias !== "undefined") {
+    updates.alias = payload.alias;
+  }
+  if (typeof payload.isAdmin !== "undefined" && payload.isAdmin !== null) {
+    updates.is_admin = payload.isAdmin;
+  }
+  if (Object.keys(updates).length === 0) {
+    return;
+  }
+  const { error } = await supabase.from("friend_profiles").update(updates).eq("user_id", friendId);
+  if (error) {
+    throw new Error(`更新朋友资料失败：${error.message}`);
+  }
+}
+
+export async function addFriendTag(
+  friendId: string,
+  label: string,
+  authorId: string,
+  viewerId?: string
+): Promise<FriendEntry | null> {
+  const supabase = getSupabaseAdmin();
+  await assertFriendExists(friendId);
+  const normalized = label.trim();
+  if (!normalized) {
+    throw new Error("标签内容不能为空");
+  }
+  const { data: inserted, error } = await supabase
+    .from("user_tags")
+    .insert({
+      target_user_id: friendId,
+      created_by: authorId,
+      label: normalized,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    throw new Error(`新增标签失败：${error.message}`);
+  }
+  await supabase
+    .from("user_tag_likes")
+    .upsert({ tag_id: inserted.id, user_id: authorId }, { onConflict: "tag_id,user_id" });
+  const [friend] = await fetchFriendsFromDb(viewerId, friendId);
+  return friend ?? null;
+}
+
+export async function toggleFriendTagLike(
+  friendId: string,
+  tagId: string,
+  userId: string,
+  viewerId?: string
+): Promise<FriendEntry | null> {
+  const supabase = getSupabaseAdmin();
+  const tagOwner = await fetchTagOwner(tagId);
+  if (!tagOwner || tagOwner !== friendId) {
+    throw new Error("标签不存在或不属于该用户");
+  }
+  const { data: existing, error: existingError } = await supabase
+    .from("user_tag_likes")
+    .select("id")
+    .eq("tag_id", tagId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existingError) {
+    throw new Error(`查询标签点赞失败：${existingError.message}`);
+  }
+  if (existing) {
+    await supabase.from("user_tag_likes").delete().eq("id", existing.id);
+  } else {
+    await supabase.from("user_tag_likes").insert({ tag_id: tagId, user_id: userId });
+  }
+  const [friend] = await fetchFriendsFromDb(viewerId, friendId);
+  return friend ?? null;
+}
+
+export async function removeFriendTag(
+  friendId: string,
+  tagId: string,
+  viewerId?: string
+): Promise<FriendEntry | null> {
+  const supabase = getSupabaseAdmin();
+  const tagOwner = await fetchTagOwner(tagId);
+  if (!tagOwner || tagOwner !== friendId) {
+    throw new Error("标签不存在或不属于该用户");
+  }
+  await supabase.from("user_tags").delete().eq("id", tagId);
+  const [friend] = await fetchFriendsFromDb(viewerId, friendId);
+  return friend ?? null;
+}
+
+async function fetchBadges(userIds: string[]): Promise<Array<{ userId: string; label: string; color: string }>> {
+  if (userIds.length === 0) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("friend_badges")
+    .select("user_id, label, color_class")
+    .in("user_id", userIds);
+  if (error) {
+    throw new Error(`加载徽章失败：${error.message}`);
+  }
+  return (data ?? []).map((row) => ({
+    userId: row.user_id,
+    label: row.label,
+    color: row.color_class,
+  }));
+}
+
+async function fetchTags(
+  userIds: string[]
+): Promise<Array<{ userId: string; id: string; label: string; likes: number; createdBy: string; createdAt: string; likedBy?: Set<string> }>> {
+  if (userIds.length === 0) return [];
+  const supabase = getSupabaseAdmin();
+  const { data: tagRows, error: tagError } = await supabase
+    .from("user_tags")
+    .select("id, label, target_user_id, created_at, created_by")
+    .in("target_user_id", userIds);
+  if (tagError) {
+    throw new Error(`加载标签失败：${tagError.message}`);
+  }
+  const tagIds = tagRows?.map((row) => row.id) ?? [];
+  const creatorIds = Array.from(new Set(tagRows?.map((row) => row.created_by).filter(Boolean) ?? []));
+
+  const [creatorMap, likesMap] = await Promise.all([
+    fetchDisplayNames(creatorIds),
+    fetchTagLikes(tagIds),
+  ]);
+
+  return (tagRows ?? []).map((row) => {
+    const likedBy = likesMap.get(row.id) ?? new Set<string>();
+    return {
+      userId: row.target_user_id,
+      id: row.id,
+      label: row.label,
+      likes: likedBy.size,
+      createdBy: creatorMap.get(row.created_by) ?? "匿名用户",
+      createdAt: row.created_at,
+      likedBy,
+    };
+  });
+}
+
+async function fetchDisplayNames(userIds: string[]): Promise<Map<string, string>> {
+  if (userIds.length === 0) return new Map();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, display_name")
+    .in("id", userIds);
+  if (error) {
+    throw new Error(`加载用户昵称失败：${error.message}`);
+  }
+  return new Map((data ?? []).map((row) => [row.id, row.display_name]));
+}
+
+async function fetchTagLikes(tagIds: string[]): Promise<Map<string, Set<string>>> {
+  const map = new Map<string, Set<string>>();
+  if (tagIds.length === 0) return map;
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("user_tag_likes")
+    .select("tag_id, user_id")
+    .in("tag_id", tagIds);
+  if (error) {
+    throw new Error(`加载标签点赞失败：${error.message}`);
+  }
+  for (const row of data ?? []) {
+    if (!map.has(row.tag_id)) {
+      map.set(row.tag_id, new Set());
+    }
+    map.get(row.tag_id)!.add(row.user_id);
+  }
+  return map;
+}
+
+async function assertFriendExists(friendId: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("friend_profiles")
+    .select("user_id")
+    .eq("user_id", friendId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`查询朋友资料失败：${error.message}`);
+  }
+  if (!data) {
+    throw new Error("朋友资料不存在");
+  }
+}
+
+async function fetchTagOwner(tagId: string): Promise<string | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("user_tags")
+    .select("target_user_id")
+    .eq("id", tagId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`查询标签归属失败：${error.message}`);
+  }
+  return data?.target_user_id ?? null;
+}
+async function fetchProfiles(userIds: string[]): Promise<ProfileRow[]> {
+  if (userIds.length === 0) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("friend_profiles")
+    .select(
+      "user_id, alias, location, accent_class, neon_class, story, custom_area_title, custom_area_highlight, is_admin, activity_score, comments, streak, orbit_label"
+    )
+    .in("user_id", userIds);
+  if (error) {
+    throw new Error(`加载朋友资料失败：${error.message}`);
+  }
+  return data ?? [];
+}
+
+async function createDefaultProfiles(users: UserRow[]): Promise<void> {
+  if (users.length === 0) return;
+  const supabase = getSupabaseAdmin();
+  const rows = users.map((user, index) => {
+    const palette = pickAccent(user.id, index);
+    return {
+      user_id: user.id,
+      alias: user.display_name,
+      location: "",
+      accent_class: palette.accent,
+      neon_class: palette.neon,
+      story: "",
+      custom_area_title: "待补完",
+      custom_area_highlight: "",
+      is_admin: user.role === 1,
+      activity_score: defaultScore(user.id),
+      comments: 0,
+      streak: 0,
+      orbit_label: defaultOrbitLabel(user.id),
+    };
+  });
+  const { error } = await supabase.from("friend_profiles").upsert(rows, { onConflict: "user_id" });
+  if (error) {
+    throw new Error(`初始化朋友资料失败：${error.message}`);
+  }
+}
+
+function pickAccent(seed: string, fallbackIndex: number) {
+  const hash = hashString(seed) + fallbackIndex;
+  return ACCENT_PALETTE[hash % ACCENT_PALETTE.length];
+}
+
+function defaultScore(seed: string) {
+  const hash = hashString(seed);
+  return 60 + (hash % 40);
+}
+
+function defaultOrbitLabel(seed: string) {
+  const hash = hashString(seed);
+  return `DAY ${50 + (hash % 250)}`;
+}
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}

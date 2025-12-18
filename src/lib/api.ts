@@ -1,5 +1,6 @@
 import { Database } from "@/types/database";
 import { PortalCard } from "@/data/mock";
+import { FriendEntry } from "@/data/friends";
 
 // 类型定义
 export type DbCard = Database["public"]["Tables"]["cards"]["Row"];
@@ -289,5 +290,61 @@ export async function updateProfile(payload: {
   }>("/api/user/profile", {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+// --- Friends API ---
+
+export async function fetchFriends(params: { viewerId?: string } = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.viewerId) {
+    searchParams.set("viewerId", params.viewerId);
+  }
+  const query = searchParams.toString();
+  const res = await apiFetch<{ items: FriendEntry[] }>(
+    `/api/friends${query ? `?${query}` : ""}`
+  );
+  return res.items ?? [];
+}
+
+export async function updateFriend(
+  friendId: string,
+  payload: { alias?: string | null; isAdmin?: boolean; actorRole: number; viewerId?: string }
+) {
+  return apiFetch<FriendEntry>(`/api/friends/${friendId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function addFriendTagApi(
+  friendId: string,
+  payload: { label: string; authorId: string; viewerId?: string }
+) {
+  return apiFetch<FriendEntry>(`/api/friends/${friendId}/tags`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function toggleFriendTagLikeApi(
+  friendId: string,
+  tagId: string,
+  payload: { userId: string; viewerId?: string }
+) {
+  return apiFetch<FriendEntry>(`/api/friends/${friendId}/tags/${tagId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "toggle-like", ...payload }),
+  });
+}
+
+export async function removeFriendTagApi(
+  friendId: string,
+  tagId: string,
+  payload: { actorRole: number; viewerId?: string }
+) {
+  return apiFetch<FriendEntry>(`/api/friends/${friendId}/tags/${tagId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "remove", ...payload }),
   });
 }

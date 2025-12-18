@@ -45,8 +45,171 @@ export type Database = {
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
+      };
+      Relationships: [];
+    };
+      user_tags: {
+        Row: {
+          id: string;
+          target_user_id: string;
+          created_by: string;
+          label: string;
+          created_at: string;
         };
-        Relationships: [];
+        Insert: {
+          id?: string;
+          target_user_id: string;
+          created_by: string;
+          label: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          target_user_id?: string;
+          created_by?: string;
+          label?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "user_tags_created_by_fkey";
+            columns: ["created_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_tags_target_user_id_fkey";
+            columns: ["target_user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      user_tag_likes: {
+        Row: {
+          id: string;
+          tag_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tag_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tag_id?: string;
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "user_tag_likes_tag_id_fkey";
+            columns: ["tag_id"];
+            referencedRelation: "user_tags";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_tag_likes_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      friend_profiles: {
+        Row: {
+          user_id: string;
+          alias: string | null;
+          location: string | null;
+          accent_class: string | null;
+          neon_class: string | null;
+          story: string | null;
+          custom_area_title: string | null;
+          custom_area_highlight: string | null;
+          is_admin: boolean;
+          activity_score: number;
+          comments: number;
+          streak: number;
+          orbit_label: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          alias?: string | null;
+          location?: string | null;
+          accent_class?: string | null;
+          neon_class?: string | null;
+          story?: string | null;
+          custom_area_title?: string | null;
+          custom_area_highlight?: string | null;
+          is_admin?: boolean;
+          activity_score?: number;
+          comments?: number;
+          streak?: number;
+          orbit_label?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          alias?: string | null;
+          location?: string | null;
+          accent_class?: string | null;
+          neon_class?: string | null;
+          story?: string | null;
+          custom_area_title?: string | null;
+          custom_area_highlight?: string | null;
+          is_admin?: boolean;
+          activity_score?: number;
+          comments?: number;
+          streak?: number;
+          orbit_label?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "friend_profiles_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      friend_badges: {
+        Row: {
+          id: string;
+          user_id: string;
+          label: string;
+          color_class: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          label: string;
+          color_class: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          label?: string;
+          color_class?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "friend_badges_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
       };
       registration_requests: {
         Row: {

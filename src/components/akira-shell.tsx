@@ -28,6 +28,7 @@ import { ApprovalsPanel } from "@/components/approvals-panel";
 import { SystemSettingsPanel } from "@/components/system-settings-panel";
 import { ProfileSheet } from "@/components/profile-sheet";
 import { fetchApprovals } from "@/lib/api";
+import { FriendsPanel } from "@/components/friends-panel";
 
 const ADMIN_CARD_IDS = new Set(["approvals", "system-settings"]);
 const guestPortalUser: PortalUser = {
@@ -868,6 +869,8 @@ function SlidingPanel({
 
           {activeCard?.id === "life-journal" ? (
             <JournalFeed />
+          ) : activeCard?.id === "friends" ? (
+            <FriendsPanel />
           ) : activeCard?.id === "approvals" ? (
             <ApprovalsPanel onUpdate={onApprovalsUpdate} />
           ) : activeCard?.id === "system-settings" ? (

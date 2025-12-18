@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useSession } from "@/components/session-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -17,12 +17,16 @@ import {
   removeFriendTagApi,
   toggleFriendTagLikeApi,
   updateFriend,
+  updateProfile,
+  uploadMedia,
 } from "@/lib/api";
 import {
   Award,
   Calendar,
+  Camera,
   Crown,
   Heart,
+  Loader2,
   Palette,
   Pencil,
   Plus,
@@ -100,7 +104,7 @@ const badgeColorOptions = [
   { id: "mono", label: "冷灰单色", className: "from-slate-200 via-slate-400 to-slate-600" },
 ];
 export function FriendsPanel() {
-  const { user: sessionUser } = useSession();
+  const { user: sessionUser, setUser } = useSession();
   const [friends, setFriends] = useState<FriendEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -139,6 +143,16 @@ export function FriendsPanel() {
       return next;
     });
   }, []);
+
+  const handleAvatarUpdatedState = useCallback(
+    (friendId: string, avatarUrl: string) => {
+      setFriends((prev) => prev.map((friend) => (friend.id === friendId ? { ...friend, avatarUrl } : friend)));
+      if (sessionUser && sessionUser.id === friendId) {
+        setUser({ ...sessionUser, avatarUrl });
+      }
+    },
+    [sessionUser, setUser]
+  );
 
   const ranking = useMemo(() => {
     const sorted = [...friends].sort((a, b) => {
@@ -500,6 +514,7 @@ export function FriendsPanel() {
               onAddBadge={handleAddBadge}
               onRemoveBadge={handleRemoveBadge}
               onUpdateTheme={handleThemeUpdate}
+              onAvatarUpdated={handleAvatarUpdatedState}
               registerCardRef={registerFriendCard}
             />
           ))
@@ -522,6 +537,7 @@ function FriendCard({
   onAddBadge,
   onRemoveBadge,
   onUpdateTheme,
+  onAvatarUpdated,
   registerCardRef,
 }: {
   friend: FriendEntry;
@@ -537,6 +553,7 @@ function FriendCard({
   onAddBadge: (friendId: string, label: string, colorClass: string) => void;
   onRemoveBadge: (friendId: string, badgeId: string) => void;
   onUpdateTheme: (friendId: string, accentClass: string | null, neonClass: string | null) => void;
+  onAvatarUpdated?: (friendId: string, avatarUrl: string) => void;
   registerCardRef: (friendId: string, node: HTMLDivElement | null) => void;
 }) {
   const [addingTag, setAddingTag] = useState(false);
@@ -553,6 +570,9 @@ function FriendCard({
   const [selectedBadgeColor, setSelectedBadgeColor] = useState(badgeColorOptions[0]?.className ?? "");
   const [editingSignature, setEditingSignature] = useState(false);
   const [signatureDraft, setSignatureDraft] = useState(friend.signature ?? "");
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const setCardRef = useCallback(
     (node: HTMLDivElement | null) => {
       registerCardRef(friend.id, node);
@@ -561,6 +581,7 @@ function FriendCard({
   );
 
   const canEditProfile = canAdmin || isSelf;
+  const canChangeAvatar = isSelf;
 
   // 删除确认状态
   const [deletingTagId, setDeletingTagId] = useState<string | null>(null);
@@ -599,7 +620,46 @@ function FriendCard({
     setSignatureDraft(friend.signature ?? "");
   }, [friend.signature]);
 
+  useEffect(() => {
+    if (avatarError) {
+      const timer = setTimeout(() => setAvatarError(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [avatarError]);
+
   const tagTotal = friend.tags.reduce((sum, tag) => sum + tag.likes, 0) || 1;
+
+  const handleAvatarClick = () => {
+    if (!canChangeAvatar || avatarUploading) return;
+    avatarInputRef.current?.click();
+  };
+
+  const handleAvatarSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("请上传图片文件");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError("请上传 5MB 以内的图片");
+      return;
+    }
+    setAvatarUploading(true);
+    setAvatarError(null);
+    try {
+      const { url } = await uploadMedia(file);
+      const updated = await updateProfile({ userId: friend.id, avatarUrl: url });
+      const nextAvatar = updated.avatar_url ?? url;
+      onAvatarUpdated?.(friend.id, nextAvatar);
+    } catch (err) {
+      console.error("更新头像失败", err);
+      setAvatarError(err instanceof Error ? err.message : "头像更新失败");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
 
   const handleAliasSave = () => {
     onAliasUpdate(friend.id, aliasDraft);
@@ -654,18 +714,52 @@ function FriendCard({
 
       <div className="relative flex flex-col gap-6 lg:flex-row lg:gap-10">
         <div className="flex flex-col items-center gap-3 text-center lg:w-48">
-          <div className="relative">
-            <Avatar className="h-32 w-32 border-2 border-white/40 shadow-xl">
+          <div className="relative group/avatar">
+            <Avatar className="h-32 w-32 border-2 border-white/40 shadow-xl transition ring-cyan-300/40">
               <AvatarImage src={friend.avatarUrl} alt={friend.displayName} />
               <AvatarFallback className="bg-slate-800 text-white/70">{friend.displayName.slice(0, 2)}</AvatarFallback>
             </Avatar>
+            {canChangeAvatar && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleAvatarClick}
+                  disabled={avatarUploading}
+                  className={cn(
+                    "absolute inset-0 z-10 flex flex-col items-center justify-center rounded-full text-xs font-semibold text-white transition-opacity duration-200",
+                    "bg-black/60 backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60",
+                    avatarUploading ? "opacity-100 cursor-wait" : "opacity-0 group-hover/avatar:opacity-100"
+                  )}
+                >
+                  {avatarUploading ? (
+                    <>
+                      <Loader2 className="mb-1 h-5 w-5 animate-spin text-cyan-200" />
+                      <span className="text-[10px] tracking-[0.3em] text-cyan-100">上传中…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="mb-1 h-5 w-5" />
+                      <span className="text-[10px] tracking-[0.3em]">更换头像</span>
+                    </>
+                  )}
+                </button>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarSelected}
+                />
+              </>
+            )}
             {friend.isAdmin && (
-              <span className="absolute -right-2 bottom-2 flex items-center gap-1 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-white shadow-lg">
+              <span className="absolute -right-2 bottom-2 z-20 flex items-center gap-1 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-white shadow-lg">
                 <Shield className="h-3 w-3" />
                 管理员
               </span>
             )}
           </div>
+          {avatarError && <p className="text-xs text-rose-300">{avatarError}</p>}
           <div>
             <p className="text-xl font-black">{friend.displayName}</p>
             <div className="mt-1 flex items-center justify-center gap-2 text-sm text-white/70">

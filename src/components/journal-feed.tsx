@@ -13,10 +13,13 @@ import {
   createComment,
   deleteComment,
   uploadMedia,
+  fetchFriends,
   type DbJournalPost,
   type DbComment,
 } from "@/lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserHoverCard } from "@/components/user-hover-card";
+import type { FriendEntry } from "@/data/friends";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,6 +41,7 @@ export function JournalFeed() {
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
+  const [friendLookup, setFriendLookup] = useState<Record<string, FriendEntry>>({});
 
   // 无限滚动观察器
   const observerTarget = useRef<HTMLDivElement>(null);
@@ -69,6 +73,27 @@ export function JournalFeed() {
   useEffect(() => {
     loadPosts();
   }, [loadPosts]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadFriends = async () => {
+      try {
+        const items = await fetchFriends(sessionUser?.id ? { viewerId: sessionUser.id } : {});
+        if (cancelled) return;
+        const lookup = items.reduce<Record<string, FriendEntry>>((acc, friend) => {
+          acc[friend.id] = friend;
+          return acc;
+        }, {});
+        setFriendLookup(lookup);
+      } catch (error) {
+        console.error("加载朋友资料失败", error);
+      }
+    };
+    loadFriends();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionUser?.id]);
 
   // 监听滚动到底部
   useEffect(() => {
@@ -198,16 +223,29 @@ export function JournalFeed() {
     }
   };
 
+  const viewerFriend = sessionUser?.id ? friendLookup[sessionUser.id] : undefined;
+
   return (
     <div className="flex h-full flex-col space-y-6">
       {/* 发布区域 */}
       {sessionUser ? (
         <div className="space-y-4 rounded-3xl border border-white/20 bg-white/10 p-6 backdrop-blur-md shadow-sm">
           <div className="flex gap-4">
-            <Avatar className="h-10 w-10 border border-white/30 shadow-sm">
-              <AvatarImage src={sessionUser.avatarUrl || undefined} />
-              <AvatarFallback>{sessionUser.displayName.slice(0, 2)}</AvatarFallback>
-            </Avatar>
+            <UserHoverCard
+              friend={viewerFriend}
+              author={{
+                id: sessionUser.id,
+                username: sessionUser.username,
+                display_name: sessionUser.displayName,
+                avatar_url: sessionUser.avatarUrl ?? null,
+                signature: sessionUser.signature ?? null,
+              }}
+            >
+              <Avatar className="h-10 w-10 border border-white/30 shadow-sm">
+                <AvatarImage src={sessionUser.avatarUrl || undefined} />
+                <AvatarFallback>{sessionUser.displayName.slice(0, 2)}</AvatarFallback>
+              </Avatar>
+            </UserHoverCard>
             <div className="flex-1 space-y-4">
               <Textarea
                 placeholder="分享你的想法..."
@@ -339,6 +377,7 @@ export function JournalFeed() {
             onUpdate={handlePostUpdate}
             onDelete={handlePostDelete}
             onImagePreview={(url, alt) => setLightboxImage({ url, alt })}
+            friendLookup={friendLookup}
           />
         ))}
 
@@ -378,6 +417,7 @@ function JournalItem({
   onUpdate,
   onDelete,
   onImagePreview,
+  friendLookup = {},
 }: {
   post: DbJournalPost;
   currentUserId?: string;
@@ -385,6 +425,7 @@ function JournalItem({
   onUpdate?: (post: DbJournalPost) => void;
   onDelete?: (postId: string) => void;
   onImagePreview?: (url: string, alt?: string) => void;
+  friendLookup?: Record<string, FriendEntry>;
 }) {
   const [liked, setLiked] = useState(
     currentUserId ? post.likes?.user_ids?.includes(currentUserId) ?? false : false
@@ -398,6 +439,10 @@ function JournalItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
   const [isSaving, setIsSaving] = useState(false);
+
+  const authorFriend =
+    (post.author_id && friendLookup[post.author_id]) ||
+    (post.author?.id ? friendLookup[post.author.id] : undefined);
 
   const isAuthor = currentUserId === post.author_id;
   const totalComments = useMemo(() => countCommentsRecursive(comments), [comments]);
@@ -521,82 +566,91 @@ function JournalItem({
     ? `回复 ${replyTarget.targetName} ...`
     : "写下你的评论...";
 
-  const renderComment = (comment: DbComment, depth = 0) => (
-    <div key={comment.id} className={cn("space-y-2", depth > 0 && "pl-6")}>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => handleReplyClick(comment)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            handleReplyClick(comment);
-          }
-        }}
-        className={cn(
-          "group/comment flex gap-3 rounded-2xl border border-white/5 bg-black/15 p-3 transition hover:border-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/40",
-          depth > 0 && "bg-black/10",
-          currentUserId ? "cursor-pointer" : "cursor-default"
-        )}
-      >
-        <Avatar className="h-8 w-8 border border-white/15">
-          <AvatarImage src={comment.author?.avatar_url || undefined} />
-          <AvatarFallback className="text-[10px]">
-            {comment.author?.display_name?.slice(0, 2) || "访客"}
-          </AvatarFallback>
-        </Avatar>
-        <div className="flex-1 space-y-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
-              <span className="font-medium text-white">
-                {comment.author?.display_name || "匿名用户"}
-              </span>
-              {comment.targetUser && (
-                <span className="text-white/50">
-                  回复 <span className="text-white/80">@{comment.targetUser.display_name}</span>
+  const renderComment = (comment: DbComment, depth = 0) => {
+    const commentFriend =
+      (comment.author_id && friendLookup[comment.author_id]) ||
+      (comment.author?.id ? friendLookup[comment.author.id] : undefined);
+    return (
+      <div key={comment.id} className={cn("space-y-2", depth > 0 && "pl-6")}>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => handleReplyClick(comment)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              handleReplyClick(comment);
+            }
+          }}
+          className={cn(
+            "group/comment flex gap-3 rounded-2xl border border-white/5 bg-black/15 p-3 transition hover:border-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/40",
+            depth > 0 && "bg-black/10",
+            currentUserId ? "cursor-pointer" : "cursor-default"
+          )}
+        >
+          <UserHoverCard friend={commentFriend} author={comment.author}>
+            <Avatar className="h-8 w-8 border border-white/15">
+              <AvatarImage src={comment.author?.avatar_url || undefined} />
+              <AvatarFallback className="text-[10px]">
+                {comment.author?.display_name?.slice(0, 2) || "访客"}
+              </AvatarFallback>
+            </Avatar>
+          </UserHoverCard>
+          <div className="flex-1 space-y-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
+                <span className="font-medium text-white">
+                  {comment.author?.display_name || "匿名用户"}
                 </span>
-              )}
-              <span className="text-[10px] uppercase tracking-[0.2em] text-white/30">
-                {new Date(comment.created_at).toLocaleString()}
-              </span>
+                {comment.targetUser && (
+                  <span className="text-white/50">
+                    回复 <span className="text-white/80">@{comment.targetUser.display_name}</span>
+                  </span>
+                )}
+                <span className="text-[10px] uppercase tracking-[0.2em] text-white/30">
+                  {new Date(comment.created_at).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 opacity-0 transition group-hover/comment:opacity-100">
+                {(currentUserId === comment.author_id || currentUserRole === 1) && (
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleDeleteComment(comment.id);
+                    }}
+                    className="text-white/30 hover:text-red-400"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-2 opacity-0 transition group-hover/comment:opacity-100">
-              {(currentUserId === comment.author_id || currentUserRole === 1) && (
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleDeleteComment(comment.id);
-                  }}
-                  className="text-white/30 hover:text-red-400"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+            <p
+              className={cn(
+                "text-sm leading-relaxed text-white/80",
+                comment.deleted_at && "italic text-white/40"
               )}
-            </div>
+            >
+              {comment.deleted_at ? "该评论已被删除" : comment.content}
+            </p>
           </div>
-          <p
-            className={cn(
-              "text-sm leading-relaxed text-white/80",
-              comment.deleted_at && "italic text-white/40"
-            )}
-          >
-            {comment.deleted_at ? "该评论已被删除" : comment.content}
-          </p>
         </div>
+        {comment.replies?.length ? (
+          <div className="space-y-2">{comment.replies.map((reply) => renderComment(reply, depth + 1))}</div>
+        ) : null}
       </div>
-      {comment.replies?.length ? (
-        <div className="space-y-2">{comment.replies.map((reply) => renderComment(reply, depth + 1))}</div>
-      ) : null}
-    </div>
-  );
+    );
+  };
 
   return (
     <Card className="group relative border-white/20 bg-white/10 p-6 transition-all hover:bg-white/15 hover:shadow-lg hover:shadow-white/5 backdrop-blur-md rounded-3xl">
       <div className="flex gap-4">
-        <Avatar className="h-12 w-12 border border-white/30 shadow-sm">
-          <AvatarImage src={post.author?.avatar_url || undefined} />
-          <AvatarFallback>{post.author?.display_name?.slice(0, 2) || "游客"}</AvatarFallback>
-        </Avatar>
+        <UserHoverCard friend={authorFriend} author={post.author}>
+          <Avatar className="h-12 w-12 border border-white/30 shadow-sm">
+            <AvatarImage src={post.author?.avatar_url || undefined} />
+            <AvatarFallback>{post.author?.display_name?.slice(0, 2) || "游客"}</AvatarFallback>
+          </Avatar>
+        </UserHoverCard>
         <div className="flex-1 space-y-2">
           <div className="flex items-center justify-between">
             <div>

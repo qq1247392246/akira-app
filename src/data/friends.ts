@@ -8,6 +8,7 @@ export type FriendTag = {
 };
 
 export type FriendBadge = {
+  id?: string;
   label: string;
   color: string;
 };

@@ -309,7 +309,18 @@ export async function fetchFriends(params: { viewerId?: string } = {}) {
 
 export async function updateFriend(
   friendId: string,
-  payload: { alias?: string | null; isAdmin?: boolean; actorRole: number; viewerId?: string }
+  payload: {
+    alias?: string | null;
+    isAdmin?: boolean;
+    location?: string | null;
+    story?: string | null;
+    customAreaTitle?: string | null;
+    customAreaHighlight?: string | null;
+    accentClass?: string | null;
+    neonClass?: string | null;
+    actorRole: number;
+    viewerId?: string;
+  }
 ) {
   return apiFetch<FriendEntry>(`/api/friends/${friendId}`, {
     method: "PATCH",
@@ -346,5 +357,26 @@ export async function removeFriendTagApi(
   return apiFetch<FriendEntry>(`/api/friends/${friendId}/tags/${tagId}`, {
     method: "PATCH",
     body: JSON.stringify({ action: "remove", ...payload }),
+  });
+}
+
+export async function addFriendBadgeApi(
+  friendId: string,
+  payload: { label: string; colorClass: string; actorRole: number; viewerId?: string }
+) {
+  return apiFetch<FriendEntry>(`/api/friends/${friendId}/badges`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function removeFriendBadgeApi(
+  friendId: string,
+  badgeId: string,
+  payload: { actorRole: number; viewerId?: string }
+) {
+  return apiFetch<FriendEntry>(`/api/friends/${friendId}/badges/${badgeId}`, {
+    method: "DELETE",
+    body: JSON.stringify(payload),
   });
 }

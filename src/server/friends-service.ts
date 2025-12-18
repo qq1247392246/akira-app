@@ -27,6 +27,17 @@ type UserRow = {
   is_active: boolean;
 };
 
+type FriendProfileUpdatePayload = {
+  alias?: string | null;
+  isAdmin?: boolean | null;
+  location?: string | null;
+  story?: string | null;
+  customAreaTitle?: string | null;
+  customAreaHighlight?: string | null;
+  accentClass?: string | null;
+  neonClass?: string | null;
+};
+
 const ACCENT_PALETTE = [
   {
     accent: "from-indigo-500/30 via-blue-500/20 to-purple-500/30",
@@ -82,7 +93,7 @@ export async function fetchFriendsFromDb(viewerId?: string, userId?: string): Pr
   const [badges, tags] = await Promise.all([fetchBadges(userIds), fetchTags(userIds)]);
   const badgesMap = badges.reduce<Record<string, FriendBadge[]>>((acc, badge) => {
     acc[badge.userId] = acc[badge.userId] || [];
-    acc[badge.userId].push({ label: badge.label, color: badge.color });
+    acc[badge.userId].push({ id: badge.id, label: badge.label, color: badge.color });
     return acc;
   }, {});
 
@@ -142,7 +153,7 @@ export async function fetchFriendsFromDb(viewerId?: string, userId?: string): Pr
 
 export async function updateFriendProfile(
   friendId: string,
-  payload: { alias?: string | null; isAdmin?: boolean | null }
+  payload: FriendProfileUpdatePayload
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
   const updates: Record<string, unknown> = {};
@@ -151,6 +162,24 @@ export async function updateFriendProfile(
   }
   if (typeof payload.isAdmin !== "undefined" && payload.isAdmin !== null) {
     updates.is_admin = payload.isAdmin;
+  }
+  if (typeof payload.location !== "undefined") {
+    updates.location = payload.location;
+  }
+  if (typeof payload.story !== "undefined") {
+    updates.story = payload.story;
+  }
+  if (typeof payload.customAreaTitle !== "undefined") {
+    updates.custom_area_title = payload.customAreaTitle;
+  }
+  if (typeof payload.customAreaHighlight !== "undefined") {
+    updates.custom_area_highlight = payload.customAreaHighlight;
+  }
+  if (typeof payload.accentClass !== "undefined") {
+    updates.accent_class = payload.accentClass;
+  }
+  if (typeof payload.neonClass !== "undefined") {
+    updates.neon_class = payload.neonClass;
   }
   if (Object.keys(updates).length === 0) {
     return;
@@ -236,17 +265,62 @@ export async function removeFriendTag(
   return friend ?? null;
 }
 
-async function fetchBadges(userIds: string[]): Promise<Array<{ userId: string; label: string; color: string }>> {
+export async function addFriendBadge(
+  friendId: string,
+  payload: { label: string; colorClass: string },
+  viewerId?: string
+): Promise<FriendEntry | null> {
+  const supabase = getSupabaseAdmin();
+  await assertFriendExists(friendId);
+  const cleanLabel = payload.label.trim();
+  if (!cleanLabel) {
+    throw new Error("徽章名称不能为空");
+  }
+  const { error } = await supabase.from("friend_badges").insert({
+    user_id: friendId,
+    label: cleanLabel,
+    color_class: payload.colorClass,
+  });
+  if (error) {
+    throw new Error(`新增徽章失败：${error.message}`);
+  }
+  const [friend] = await fetchFriendsFromDb(viewerId, friendId);
+  return friend ?? null;
+}
+
+export async function removeFriendBadge(
+  friendId: string,
+  badgeId: string,
+  viewerId?: string
+): Promise<FriendEntry | null> {
+  const supabase = getSupabaseAdmin();
+  await assertFriendExists(friendId);
+  const { error } = await supabase
+    .from("friend_badges")
+    .delete()
+    .eq("id", badgeId)
+    .eq("user_id", friendId);
+  if (error) {
+    throw new Error(`删除徽章失败：${error.message}`);
+  }
+  const [friend] = await fetchFriendsFromDb(viewerId, friendId);
+  return friend ?? null;
+}
+
+async function fetchBadges(
+  userIds: string[]
+): Promise<Array<{ id: string; userId: string; label: string; color: string }>> {
   if (userIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("friend_badges")
-    .select("user_id, label, color_class")
+    .select("id, user_id, label, color_class")
     .in("user_id", userIds);
   if (error) {
     throw new Error(`加载徽章失败：${error.message}`);
   }
   return (data ?? []).map((row) => ({
+    id: row.id,
     userId: row.user_id,
     label: row.label,
     color: row.color_class,

@@ -8,7 +8,18 @@ export async function PATCH(
   try {
     const { friendId } = await params;
     const body = await request.json().catch(() => ({}));
-    const { alias, isAdmin, actorRole, viewerId } = body ?? {};
+    const {
+      alias,
+      isAdmin,
+      location,
+      story,
+      customAreaTitle,
+      customAreaHighlight,
+      accentClass,
+      neonClass,
+      actorRole,
+      viewerId,
+    } = body ?? {};
     if (actorRole !== 1) {
       return NextResponse.json({ error: "需要管理员权限" }, { status: 403 });
     }
@@ -20,6 +31,29 @@ export async function PATCH(
           ? undefined
           : normalizedAlias || null,
       isAdmin: typeof isAdmin === "boolean" ? isAdmin : undefined,
+      location:
+        typeof location === "string" ? location.trim() || null : location,
+      story: typeof story === "string" ? story.trim() || null : story,
+      customAreaTitle:
+        typeof customAreaTitle === "string"
+          ? customAreaTitle.trim() || null
+          : customAreaTitle,
+      customAreaHighlight:
+        typeof customAreaHighlight === "string"
+          ? customAreaHighlight.trim() || null
+          : customAreaHighlight,
+      accentClass:
+        typeof accentClass === "string"
+          ? accentClass
+          : accentClass === null
+          ? null
+          : undefined,
+      neonClass:
+        typeof neonClass === "string"
+          ? neonClass
+          : neonClass === null
+          ? null
+          : undefined,
     });
 
     const [friend] = await fetchFriendsFromDb(viewerId, friendId);

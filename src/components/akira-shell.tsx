@@ -100,6 +100,7 @@ export function AkiraShell({
   }, []);
 
   const [cards, setCards] = useState<PortalCard[]>(initialCards);
+  const [cardsError, setCardsError] = useState<string | null>(null);
   const [activeCard, setActiveCard] = useState<PortalCard | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -132,6 +133,7 @@ export function AkiraShell({
 
   const refreshCards = useCallback(async () => {
     try {
+      setCardsError(null);
       let fetchedCards = await fetchCards();
 
       // 智能合并：保留 Mock 数据中的丰富视觉元素和指标，防止 API 数据缺失导致 UI 塌陷
@@ -161,6 +163,8 @@ export function AkiraShell({
       setCards(fetchedCards);
     } catch (error) {
       console.error("Failed to fetch cards:", error);
+      setCardsError("获取卡片失败，请稍后再试。");
+      setCards(initialCards);
     }
   }, [sessionUser, refreshApprovalsBadge, initialCards]);
 
@@ -282,10 +286,24 @@ export function AkiraShell({
             canCreateCard={Boolean(canManageCards)}
             onOpenProfile={() => setProfileOpen(true)}
           />
-          <main className="relative flex-1 overflow-hidden px-4 pb-10 pt-6 sm:px-8 lg:px-12">
+          <main className="relative flex-1 overflow-hidden">
             <ScrollArea className="h-full">
-              <div className="space-y-12 pb-32">
+              <div className="space-y-12 px-4 pb-40 pt-6 sm:px-8 lg:px-12">
                 <Hero user={resolvedUser} />
+                {cardsError && (
+                  <div className="rounded-2xl border border-rose-500/40 bg-rose-500/15 px-4 py-3 text-rose-100 shadow-lg">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-sm">{cardsError}</span>
+                      <Button
+                        size="sm"
+                        className="rounded-full border border-white/20 bg-white/10 text-white hover:bg-white/20"
+                        onClick={refreshCards}
+                      >
+                        重试
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <CardGrid cards={visibleCards} onSelect={handleCardClick} user={resolvedUser} />
               </div>
             </ScrollArea>
@@ -673,7 +691,7 @@ function CardGrid({
             )}
           >
             {/* 1. 边框：使用高亮白色半透明，营造动漫描边感 */}
-            <div className="absolute inset-0 bg-gradient-to-br from-white/60 via-white/20 to-white/60 opacity-80" />
+            <div className="absolute inset-0 bg-gradient-to-br from-white/60 via-white/20 to-white/60 opacity-80 animate-[pulse-glow_7s_ease-in-out_infinite]" />
 
             {/* 2. 基础背景层：高透亮色玻璃态 (Frosted Glass) */}
             <div className="absolute inset-[2px] rounded-[30px] bg-white/10 backdrop-blur-xl border border-white/20 shadow-inner" />
@@ -683,15 +701,15 @@ function CardGrid({
 
               {/* 3.1 氛围光效：更柔和、更明亮 */}
               <div className={cn(
-                "absolute -left-20 -top-20 h-[500px] w-[500px] rounded-full opacity-40 blur-[80px] mix-blend-screen transition-all duration-700 group-hover:opacity-60",
+                "absolute -left-20 -top-20 h-[500px] w-[500px] rounded-full opacity-40 blur-[80px] mix-blend-screen transition-all duration-700 group-hover:opacity-60 animate-[pulse-glow_6.5s_ease-in-out_infinite]",
                 `bg-gradient-to-br ${card.accent}`
               )} />
 
               {/* 3.2 辅助光效 */}
               <div className={cn(
-                "absolute -right-20 -bottom-20 h-[400px] w-[400px] rounded-full opacity-30 blur-[60px] mix-blend-screen transition-all duration-700 group-hover:opacity-50",
+                "absolute -right-20 -bottom-20 h-[400px] w-[400px] rounded-full opacity-30 blur-[60px] mix-blend-screen transition-all duration-700 group-hover:opacity-50 animate-[pulse-glow_7.5s_ease-in-out_infinite]",
                 `bg-gradient-to-tl ${card.accent}`
-              )} />
+              )} style={{ animationDelay: "1s" }} />
 
               {/* 3.3 顶部高光：增强玻璃质感 */}
               <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80" />

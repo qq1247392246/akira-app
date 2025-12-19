@@ -45,6 +45,56 @@ const guestPortalUser: PortalUser = {
   tags: [],
 };
 
+const HEART_COLORS = ["#fb7185", "#f43f5e", "#e11d48"];
+
+type HeartParticle = {
+  left: number;
+  fontSize: number;
+  color: string;
+  tx: number;
+  ty: number;
+  rotation: number;
+  scale: number;
+  duration: number;
+  delay: number;
+};
+
+function hashStringToSeed(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash || 1;
+}
+
+function createSeededRandom(seed: number) {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function generateHeartParticles(cardId: string, count = 20): HeartParticle[] {
+  const rand = createSeededRandom(hashStringToSeed(cardId));
+  return Array.from({ length: count }, () => {
+    const color = HEART_COLORS[Math.floor(rand() * HEART_COLORS.length)] ?? HEART_COLORS[0];
+    return {
+      left: 50 + (rand() * 60 - 30),
+      fontSize: 12 + rand() * 24,
+      color,
+      tx: rand() * 200 - 100,
+      ty: -(rand() * 150 + 50),
+      rotation: rand() * 360,
+      scale: 0.8 + rand() * 0.5,
+      duration: 1.5 + rand() * 1.8,
+      delay: rand() * 0.5,
+    };
+  });
+}
+
 export function AkiraShell({
   cards: initialCards = portalCards,
   user = portalUser,
@@ -676,11 +726,23 @@ function CardGrid({
   onSelect: (card: PortalCard) => void;
   user: PortalUser;
 }) {
+  const heartParticlesMap = useMemo(() => {
+    const map: Record<string, HeartParticle[]> = {};
+    cards.forEach((card) => {
+      if (card.id) {
+        map[card.id] = generateHeartParticles(card.id);
+      }
+    });
+    return map;
+  }, [cards]);
+
   return (
     <div className="flex flex-col gap-8">
       {cards
         .filter((card) => (card.adminOnly ? user.role === "admin" : true))
-        .map((card) => (
+        .map((card) => {
+          const heartParticles = card.id ? heartParticlesMap[card.id] ?? [] : [];
+          return (
           <button
             key={card.id}
             id={`card-${card.id}`}
@@ -728,21 +790,21 @@ function CardGrid({
                   </div>
                   {/* 动态四散爱心粒子 - 增加数量和随机性 */}
                   <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                    {[...Array(20)].map((_, i) => (
+                    {heartParticles.map((particle, i) => (
                       <div
                         key={i}
                         className="absolute text-rose-400 opacity-0 group-hover:animate-float-particle"
                         style={{
-                          left: `${50 + (Math.random() * 60 - 30)}%`,
-                          bottom: '20%',
-                          fontSize: `${Math.random() * 24 + 12}px`,
-                          color: i % 3 === 0 ? '#fb7185' : i % 3 === 1 ? '#f43f5e' : '#e11d48', // rose-400, rose-500, rose-600
-                          '--tx': `${Math.random() * 200 - 100}px`,
-                          '--ty': `-${Math.random() * 150 + 50}px`,
-                          '--r': `${Math.random() * 360}deg`,
-                          '--s': `${Math.random() * 0.5 + 0.8}`,
-                          '--d': `${Math.random() * 2 + 1.5}s`,
-                          animationDelay: `${Math.random() * 0.5}s`,
+                          left: `${particle.left}%`,
+                          bottom: "20%",
+                          fontSize: `${particle.fontSize}px`,
+                          color: particle.color,
+                          "--tx": `${particle.tx}px`,
+                          "--ty": `${particle.ty}px`,
+                          "--r": `${particle.rotation}deg`,
+                          "--s": `${particle.scale}`,
+                          "--d": `${particle.duration}s`,
+                          animationDelay: `${particle.delay}s`,
                         } as React.CSSProperties}
                       >
                         ❤️
@@ -823,7 +885,7 @@ function CardGrid({
               </div>
             </div>
           </button>
-        ))}
+        )})}
     </div>
   );
 }

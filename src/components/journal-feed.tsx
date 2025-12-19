@@ -28,9 +28,12 @@ import { Heart, MessageSquare, Send, Loader2, Trash2, Pencil, X, Check, ImagePlu
 import { cn } from "@/lib/utils";
 
 type LightboxImage = { url: string; alt?: string };
-const MAX_UPLOAD_DIMENSION = 2000;
-const MAX_UPLOAD_BYTES = 2.5 * 1024 * 1024; // 2.5MB
-const MAX_PARALLEL_UPLOADS = 3;
+const MAX_UPLOAD_DIMENSION = 1600;
+const MAX_UPLOAD_BYTES = 1.2 * 1024 * 1024; // 1.2MB
+const MAX_PARALLEL_UPLOADS = 2;
+const MAX_UPLOAD_RETRIES = 3;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function readFileAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -279,24 +282,50 @@ export function JournalFeed() {
     try {
       const optimizedFiles = await Promise.all(selectedFiles.map((file) => createOptimizedImage(file)));
       let currentIndex = 0;
+      const failedFiles: string[] = [];
 
-      const worker = async () => {
-        while (currentIndex < optimizedFiles.length) {
-          const fileIndex = currentIndex++;
-          const file = optimizedFiles[fileIndex];
-          const originalName = selectedFiles[fileIndex].name;
+      const uploadWithRetry = async (displayName: string, file: File) => {
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt < MAX_UPLOAD_RETRIES; attempt += 1) {
           try {
             const { url } = await uploadMedia(file);
             setMediaUrls((prev) => [...prev, url]);
+            return;
           } catch (uploadError) {
-            console.error(`Failed to upload ${originalName}`, uploadError);
-            throw uploadError;
+            lastError = uploadError;
+            if (attempt === MAX_UPLOAD_RETRIES - 1) {
+              console.error(`Failed to upload ${displayName}:`, uploadError);
+              throw uploadError;
+            }
+            console.warn(`Retrying upload for ${displayName} (attempt ${attempt + 2}/${MAX_UPLOAD_RETRIES})`);
+            await sleep(600 * (attempt + 1));
+          }
+        }
+        throw lastError instanceof Error ? lastError : new Error("未知上传错误");
+      };
+
+      const worker = async () => {
+        while (true) {
+          const fileIndex = currentIndex++;
+          if (fileIndex >= optimizedFiles.length) {
+            break;
+          }
+          const file = optimizedFiles[fileIndex];
+          const originalName = selectedFiles[fileIndex].name;
+          try {
+            await uploadWithRetry(originalName, file);
+          } catch {
+            failedFiles.push(originalName);
           }
         }
       };
 
       const concurrency = Math.min(MAX_PARALLEL_UPLOADS, optimizedFiles.length);
       await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+      if (failedFiles.length > 0) {
+        setMediaError(`以下文件上传失败：${failedFiles.join("、")}`);
+      }
     } catch (error) {
       console.error("Failed to upload media:", error);
       setMediaError("上传失败，请稍后重试");

@@ -28,6 +28,73 @@ import { Heart, MessageSquare, Send, Loader2, Trash2, Pencil, X, Check, ImagePlu
 import { cn } from "@/lib/utils";
 
 type LightboxImage = { url: string; alt?: string };
+const MAX_UPLOAD_DIMENSION = 2000;
+const MAX_UPLOAD_BYTES = 2.5 * 1024 * 1024; // 2.5MB
+const MAX_PARALLEL_UPLOADS = 3;
+
+async function readFileAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+async function createOptimizedImage(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) {
+    return file;
+  }
+  if (file.size <= MAX_UPLOAD_BYTES) {
+    return file;
+  }
+
+  const dataUrl = await readFileAsDataURL(file);
+  const image = await loadImage(dataUrl);
+  const maxDimension = Math.max(image.width, image.height);
+  const scale = Math.min(1, MAX_UPLOAD_DIMENSION / maxDimension);
+
+  if (scale >= 1 && file.size <= MAX_UPLOAD_BYTES) {
+    return file;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return file;
+  }
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  const blob: Blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (result) => {
+        if (result) resolve(result);
+        else reject(new Error("图片压缩失败"));
+      },
+      file.type === "image/png" ? "image/png" : "image/jpeg",
+      0.85
+    );
+  });
+
+  if (blob.size >= file.size) {
+    return file;
+  }
+
+  return new File([blob], file.name.replace(/\.(\w+)$/, "-optimized.$1"), {
+    type: blob.type,
+  });
+}
 
 export function JournalFeed() {
   const { user: sessionUser } = useSession();
@@ -210,10 +277,26 @@ export function JournalFeed() {
     setMediaError(null);
 
     try {
-      for (const file of selectedFiles) {
-        const { url } = await uploadMedia(file);
-        setMediaUrls((prev) => [...prev, url]);
-      }
+      const optimizedFiles = await Promise.all(selectedFiles.map((file) => createOptimizedImage(file)));
+      let currentIndex = 0;
+
+      const worker = async () => {
+        while (currentIndex < optimizedFiles.length) {
+          const fileIndex = currentIndex++;
+          const file = optimizedFiles[fileIndex];
+          const originalName = selectedFiles[fileIndex].name;
+          try {
+            const { url } = await uploadMedia(file);
+            setMediaUrls((prev) => [...prev, url]);
+          } catch (uploadError) {
+            console.error(`Failed to upload ${originalName}`, uploadError);
+            throw uploadError;
+          }
+        }
+      };
+
+      const concurrency = Math.min(MAX_PARALLEL_UPLOADS, optimizedFiles.length);
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
     } catch (error) {
       console.error("Failed to upload media:", error);
       setMediaError("上传失败，请稍后重试");

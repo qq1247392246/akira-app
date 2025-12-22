@@ -32,6 +32,7 @@ const MAX_UPLOAD_DIMENSION = 1600;
 const MAX_UPLOAD_BYTES = 1.2 * 1024 * 1024; // 1.2MB
 const MAX_PARALLEL_UPLOADS = 2;
 const MAX_UPLOAD_RETRIES = 3;
+const MAX_MEDIA_ITEMS = 9;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -243,8 +244,8 @@ export function JournalFeed() {
       setMediaError("请输入有效的图片链接");
       return;
     }
-    if (mediaUrls.length >= 8) {
-      setMediaError("最多添加 8 张图片");
+    if (mediaUrls.length >= MAX_MEDIA_ITEMS) {
+      setMediaError(`最多添加 ${MAX_MEDIA_ITEMS} 张图片`);
       return;
     }
     setMediaUrls((prev) => [...prev, mediaUrlInput.trim()]);
@@ -257,8 +258,8 @@ export function JournalFeed() {
   };
 
   const handlePickLocalFiles = () => {
-    if (mediaUrls.length >= 8) {
-      setMediaError("最多添加 8 张图片");
+    if (mediaUrls.length >= MAX_MEDIA_ITEMS) {
+      setMediaError(`最多添加 ${MAX_MEDIA_ITEMS} 张图片`);
       return;
     }
     fileInputRef.current?.click();
@@ -268,9 +269,9 @@ export function JournalFeed() {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    const remainingSlots = 8 - mediaUrls.length;
+    const remainingSlots = MAX_MEDIA_ITEMS - mediaUrls.length;
     if (remainingSlots <= 0) {
-      setMediaError("最多添加 8 张图片");
+      setMediaError(`最多添加 ${MAX_MEDIA_ITEMS} 张图片`);
       event.target.value = "";
       return;
     }

@@ -9,12 +9,14 @@ const paramsSchema = z.object({
   postId: z.string().uuid(),
 });
 
+const MAX_MEDIA_ITEMS = 9;
+
 const updateSchema = z.object({
   authorId: z.string().uuid(),
   title: z.string().max(120).optional(),
   content: z.string().min(1).optional(),
   visibility: z.enum(["public"]).optional(),
-  mediaUrls: z.array(z.string().url()).max(8).optional(),
+  mediaUrls: z.array(z.string().url()).max(MAX_MEDIA_ITEMS).optional(),
 });
 
 const deleteSchema = z.object({

@@ -36,12 +36,14 @@ const listQuerySchema = z.object({
   cursor: z.string().datetime().optional(),
 });
 
+const MAX_MEDIA_ITEMS = 9;
+
 const createPostSchema = z.object({
   authorId: z.string().uuid(),
   title: z.string().max(120).optional(),
   content: z.string().min(1),
   visibility: z.enum(["public"]).optional(),
-  mediaUrls: z.array(z.string().url()).max(8).optional(),
+  mediaUrls: z.array(z.string().url()).max(MAX_MEDIA_ITEMS).optional(),
 });
 
 export async function GET(request: Request) {

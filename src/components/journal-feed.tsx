@@ -266,13 +266,14 @@ export function JournalFeed() {
   };
 
   const handleLocalFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
+    const inputEl = event.currentTarget;
+    const files = inputEl.files;
     if (!files || files.length === 0) return;
 
     const remainingSlots = MAX_MEDIA_ITEMS - mediaUrls.length;
     if (remainingSlots <= 0) {
       setMediaError(`最多添加 ${MAX_MEDIA_ITEMS} 张图片`);
-      event.target.value = "";
+      inputEl.value = "";
       return;
     }
 
@@ -332,7 +333,7 @@ export function JournalFeed() {
       setMediaError("上传失败，请稍后重试");
     } finally {
       setUploadingMedia(false);
-      event.target.value = "";
+      inputEl.value = "";
     }
   };
 

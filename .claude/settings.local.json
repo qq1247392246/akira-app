@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__ace-tool__search_context",
+      "Skill(collaborating-with-codex)",
+      "Skill(collaborating-with-gemini)",
+      "Bash(python:*)",
+      "Bash(npm install swr@^2.2.5 server-only)",
+      "Bash(npm install)",
+      "Bash(pnpm install)",
+      "Bash(corepack disable:*)",
+      "Bash(pnpm dev)"
+    ]
+  }
+}

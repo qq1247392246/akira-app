@@ -12,6 +12,7 @@ const JournalFeed = dynamic(() => import("@/components/journal-feed").then((mod)
   ssr: false,
 });
 const FriendsPanel = dynamic(() => import("@/components/friends-panel").then((mod) => ({ default: mod.FriendsPanel })), { ssr: false });
+const PlaygroundPanel = dynamic(() => import("@/components/playground-panel").then((mod) => ({ default: mod.PlaygroundPanel })), { ssr: false });
 const ApprovalsPanel = dynamic(() => import("@/components/approvals-panel").then((mod) => ({ default: mod.ApprovalsPanel })), { ssr: false });
 const SystemSettingsPanel = dynamic(() => import("@/components/system-settings-panel").then((mod) => ({ default: mod.SystemSettingsPanel })), { ssr: false });
 
@@ -52,6 +53,7 @@ export function SlidingPanel({
 
           {activeCard?.id === "life-journal" ? <JournalFeed /> :
            activeCard?.id === "friends" ? <FriendsPanel /> :
+           activeCard?.id === "playground" ? <PlaygroundPanel /> :
            activeCard?.id === "approvals" ? <ApprovalsPanel onUpdate={onApprovalsUpdate} /> :
            activeCard?.id === "system-settings" ? <SystemSettingsPanel onUpdate={onCardsUpdate} /> :
            activeCard && insight ? (

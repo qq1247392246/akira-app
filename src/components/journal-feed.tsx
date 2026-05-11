@@ -1,35 +1,47 @@
 "use client";
 
-import { useCallback, useEffect, useState, useRef, ChangeEvent, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import {
+  Check,
+  Heart,
+  ImagePlus,
+  Loader2,
+  MessageSquare,
+  Pencil,
+  Send,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { useSession } from "@/components/session-provider";
 import {
+  createComment,
   createJournal,
-  fetchJournal,
-  updateJournal,
+  deleteComment,
   deleteJournal,
+  fetchComments,
+  fetchFriends,
+  fetchJournal,
   likeJournal,
   unlikeJournal,
-  fetchComments,
-  createComment,
-  deleteComment,
+  updateJournal,
   uploadMedia,
-  fetchFriends,
-  type DbJournalPost,
   type DbComment,
+  type DbJournalPost,
 } from "@/lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { UserHoverCard } from "@/components/user-hover-card";
-import type { FriendEntry } from "@/data/friends";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Heart, MessageSquare, Send, Loader2, Trash2, Pencil, X, Check, ImagePlus, Upload } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { UserHoverCard } from "@/components/user-hover-card";
+import type { FriendEntry } from "@/data/friends";
 import { cn } from "@/lib/utils";
 
 type LightboxImage = { url: string; alt?: string };
+
 const MAX_UPLOAD_DIMENSION = 1600;
-const MAX_UPLOAD_BYTES = 1.2 * 1024 * 1024; // 1.2MB
+const MAX_UPLOAD_BYTES = 1.2 * 1024 * 1024;
 const MAX_PARALLEL_UPLOADS = 2;
 const MAX_UPLOAD_RETRIES = 3;
 const MAX_MEDIA_ITEMS = 9;
@@ -55,10 +67,7 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 async function createOptimizedImage(file: File): Promise<File> {
-  if (!file.type.startsWith("image/")) {
-    return file;
-  }
-  if (file.size <= MAX_UPLOAD_BYTES) {
+  if (!file.type.startsWith("image/") || file.size <= MAX_UPLOAD_BYTES) {
     return file;
   }
 
@@ -67,17 +76,12 @@ async function createOptimizedImage(file: File): Promise<File> {
   const maxDimension = Math.max(image.width, image.height);
   const scale = Math.min(1, MAX_UPLOAD_DIMENSION / maxDimension);
 
-  if (scale >= 1 && file.size <= MAX_UPLOAD_BYTES) {
-    return file;
-  }
-
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(image.width * scale));
   canvas.height = Math.max(1, Math.round(image.height * scale));
   const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    return file;
-  }
+  if (!ctx) return file;
+
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
   const blob: Blob = await new Promise((resolve, reject) => {
@@ -100,7 +104,7 @@ async function createOptimizedImage(file: File): Promise<File> {
   });
 }
 
-export function JournalFeed() {
+export function JournalFeed({ onLightboxOpenChange }: { onLightboxOpenChange?: (open: boolean) => void } = {}) {
   const { user: sessionUser } = useSession();
   const [posts, setPosts] = useState<DbJournalPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,10 +117,27 @@ export function JournalFeed() {
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
   const [friendLookup, setFriendLookup] = useState<Record<string, FriendEntry>>({});
-
-  // 无限滚动观察器
   const observerTarget = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      onLightboxOpenChange?.(false);
+    };
+  }, [onLightboxOpenChange]);
+
+  const openLightbox = useCallback(
+    (image: LightboxImage) => {
+      onLightboxOpenChange?.(true);
+      setLightboxImage(image);
+    },
+    [onLightboxOpenChange]
+  );
+
+  const closeLightbox = useCallback(() => {
+    setLightboxImage(null);
+    onLightboxOpenChange?.(false);
+  }, [onLightboxOpenChange]);
 
   const loadPosts = useCallback(async (cursor?: string) => {
     try {
@@ -124,9 +145,8 @@ export function JournalFeed() {
       const res = await fetchJournal({ limit: 10, cursor });
       if (cursor) {
         setPosts((prev) => {
-          // 简单的去重逻辑，防止重复 key
-          const existingIds = new Set(prev.map(p => p.id));
-          const newItems = res.items.filter(p => !existingIds.has(p.id));
+          const existingIds = new Set(prev.map((post) => post.id));
+          const newItems = res.items.filter((post) => !existingIds.has(post.id));
           return [...prev, ...newItems];
         });
       } else {
@@ -140,13 +160,13 @@ export function JournalFeed() {
     }
   }, []);
 
-  // 初始加载
   useEffect(() => {
     loadPosts();
   }, [loadPosts]);
 
   useEffect(() => {
     let cancelled = false;
+
     const loadFriends = async () => {
       try {
         const items = await fetchFriends(sessionUser?.id ? { viewerId: sessionUser.id } : {});
@@ -157,16 +177,16 @@ export function JournalFeed() {
         }, {});
         setFriendLookup(lookup);
       } catch (error) {
-        console.error("加载朋友资料失败", error);
+        console.error("Failed to load friend profiles:", error);
       }
     };
+
     loadFriends();
     return () => {
       cancelled = true;
     };
   }, [sessionUser?.id]);
 
-  // 监听滚动到底部
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -206,11 +226,13 @@ export function JournalFeed() {
         },
         likes: newPost.likes ?? { count: 0, user_ids: [] },
         comments_count: newPost.comments_count ?? 0,
-        media: newPost.media ?? mediaUrls.map((url, index) => ({
-          id: `${newPost.id}-${index}`,
-          url,
-          position: index,
-        })),
+        media:
+          newPost.media ??
+          mediaUrls.map((url, index) => ({
+            id: `${newPost.id}-${index}`,
+            url,
+            position: index,
+          })),
       };
 
       setPosts((prev) => [postWithAuthor, ...prev]);
@@ -226,17 +248,19 @@ export function JournalFeed() {
   };
 
   const handlePostUpdate = (updatedPost: DbJournalPost) => {
-    setPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost : p));
+    setPosts((prev) => prev.map((post) => (post.id === updatedPost.id ? updatedPost : post)));
   };
 
   const handlePostDelete = (postId: string) => {
-    setPosts(prev => prev.filter(p => p.id !== postId));
+    setPosts((prev) => prev.filter((post) => post.id !== postId));
   };
 
   const handleAddMediaUrl = () => {
-    if (!mediaUrlInput.trim()) return;
+    const value = mediaUrlInput.trim();
+    if (!value) return;
+
     try {
-      const parsed = new URL(mediaUrlInput.trim());
+      const parsed = new URL(value);
       if (!parsed.protocol.startsWith("http")) {
         throw new Error("invalid");
       }
@@ -244,11 +268,13 @@ export function JournalFeed() {
       setMediaError("请输入有效的图片链接");
       return;
     }
+
     if (mediaUrls.length >= MAX_MEDIA_ITEMS) {
       setMediaError(`最多添加 ${MAX_MEDIA_ITEMS} 张图片`);
       return;
     }
-    setMediaUrls((prev) => [...prev, mediaUrlInput.trim()]);
+
+    setMediaUrls((prev) => [...prev, value]);
     setMediaUrlInput("");
     setMediaError(null);
   };
@@ -299,7 +325,6 @@ export function JournalFeed() {
               console.error(`Failed to upload ${displayName}:`, uploadError);
               throw uploadError;
             }
-            console.warn(`Retrying upload for ${displayName} (attempt ${attempt + 2}/${MAX_UPLOAD_RETRIES})`);
             await sleep(600 * (attempt + 1));
           }
         }
@@ -309,9 +334,8 @@ export function JournalFeed() {
       const worker = async () => {
         while (true) {
           const fileIndex = currentIndex++;
-          if (fileIndex >= optimizedFiles.length) {
-            break;
-          }
+          if (fileIndex >= optimizedFiles.length) break;
+
           const file = optimizedFiles[fileIndex];
           const originalName = selectedFiles[fileIndex].name;
           try {
@@ -341,9 +365,8 @@ export function JournalFeed() {
 
   return (
     <div className="flex h-full flex-col space-y-6">
-      {/* 发布区域 */}
       {sessionUser ? (
-        <div className="space-y-4 rounded-3xl border border-white/20 bg-white/10 p-6 backdrop-blur-md shadow-sm">
+        <div className="sketch-surface sketch-wash paper-texture space-y-4 p-6">
           <div className="flex gap-4">
             <UserHoverCard
               friend={viewerFriend}
@@ -355,34 +378,30 @@ export function JournalFeed() {
                 signature: sessionUser.signature ?? null,
               }}
             >
-              <Avatar className="h-10 w-10 border border-white/30 shadow-sm">
+              <Avatar className="h-10 w-10 border-2 border-[rgb(var(--ink-rgb)/0.12)]">
                 <AvatarImage src={sessionUser.avatarUrl || undefined} />
                 <AvatarFallback>{sessionUser.displayName.slice(0, 2)}</AvatarFallback>
               </Avatar>
             </UserHoverCard>
+
             <div className="flex-1 space-y-4">
               <Textarea
-                placeholder="分享你的想法..."
+                placeholder="写下一条近况、念头或今天想留住的片段"
                 value={newPostContent}
-                onChange={(e) => setNewPostContent(e.target.value)}
-                className="min-h-[100px] resize-none rounded-2xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40 focus-visible:ring-cyan-400/50 focus-visible:border-cyan-400/50 transition-all"
+                onChange={(event) => setNewPostContent(event.target.value)}
+                className="min-h-[100px] resize-none rounded-2xl text-sm"
               />
 
-              <div className="space-y-3 rounded-2xl border border-dashed border-white/20 bg-white/5 p-4">
+              <div className="space-y-3 rounded-2xl border-2 border-dashed border-[rgb(var(--ink-rgb)/0.16)] bg-[rgb(var(--paper-soft-rgb)/0.82)] p-4">
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <Input
                     type="url"
                     placeholder="粘贴图片链接"
                     value={mediaUrlInput}
-                    onChange={(e) => setMediaUrlInput(e.target.value)}
-                    className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/30 rounded-xl focus-visible:ring-cyan-400/50"
+                    onChange={(event) => setMediaUrlInput(event.target.value)}
+                    className="rounded-xl text-sm"
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="shrink-0 border-white/30 bg-white/10 text-white hover:bg-white/20 rounded-xl"
-                    onClick={handleAddMediaUrl}
-                  >
+                  <Button type="button" variant="outline" className="shrink-0 rounded-xl" onClick={handleAddMediaUrl}>
                     <ImagePlus className="mr-2 h-4 w-4" />
                     添加链接
                   </Button>
@@ -400,7 +419,7 @@ export function JournalFeed() {
                   <Button
                     type="button"
                     variant="secondary"
-                    className="border border-white/20 bg-white/10 text-white hover:bg-white/20 rounded-xl"
+                    className="rounded-xl border-2 border-[rgb(var(--ink-rgb)/0.12)] bg-[rgb(var(--paper-card-rgb)/0.85)] text-foreground hover:bg-[rgb(var(--paper-card-rgb)/0.95)]"
                     onClick={handlePickLocalFiles}
                     disabled={uploadingMedia}
                   >
@@ -411,24 +430,26 @@ export function JournalFeed() {
                     )}
                     {uploadingMedia ? "上传中…" : "上传本地图片"}
                   </Button>
-                  <p className="text-xs text-white/50">支持 png / jpg / webp</p>
+                  <p className="text-xs text-[rgb(var(--ink-muted-rgb))]">支持 png / jpg / webp</p>
                 </div>
 
-                {mediaError && <p className="text-xs text-rose-300">{mediaError}</p>}
+                {mediaError ? (
+                  <p className="text-xs text-[rgb(var(--accent-coral-rgb))]">{mediaError}</p>
+                ) : null}
 
-                {mediaUrls.length > 0 && (
-                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 pt-2">
+                {mediaUrls.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-3 pt-2 sm:grid-cols-4">
                     {mediaUrls.map((url, index) => (
                       <div
                         key={`${url}-${index}`}
-                        className="group relative aspect-square overflow-hidden rounded-xl border border-white/20 bg-white/5 shadow-sm"
-                        onClick={() => setLightboxImage({ url, alt: `图片预览 ${index + 1}` })}
+                        className="group relative aspect-square overflow-hidden rounded-xl border-2 border-[rgb(var(--ink-rgb)/0.12)] bg-[rgb(var(--paper-card-rgb)/0.84)] shadow-sm"
+                        onClick={() => openLightbox({ url, alt: `图片预览 ${index + 1}` })}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            setLightboxImage({ url, alt: `图片预览 ${index + 1}` });
+                            openLightbox({ url, alt: `图片预览 ${index + 1}` });
                           }
                         }}
                       >
@@ -442,32 +463,23 @@ export function JournalFeed() {
                         />
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={(event) => {
+                            event.stopPropagation();
                             handleRemoveMediaUrl(index);
                           }}
-                          className="absolute right-2 top-2 rounded-full bg-black/40 p-1.5 text-white/90 opacity-0 backdrop-blur-md transition hover:bg-rose-500 group-hover:opacity-100"
+                          className="absolute right-2 top-2 rounded-full bg-[rgb(var(--paper-soft-rgb)/0.94)] p-1.5 text-foreground opacity-0 transition hover:bg-[rgb(var(--accent-coral-rgb)/0.85)] hover:text-[rgb(var(--paper-soft-rgb))] group-hover:opacity-100"
                         >
                           <X className="h-3 w-3" />
                         </button>
                       </div>
                     ))}
                   </div>
-                )}
+                ) : null}
               </div>
 
               <div className="flex justify-end pt-2">
-                <Button
-                  size="lg"
-                  onClick={handleCreatePost}
-                  disabled={isPosting || !newPostContent.trim()}
-                  className="bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:from-cyan-400 hover:to-blue-400 rounded-xl shadow-lg shadow-cyan-500/20 border-none"
-                >
-                  {isPosting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="mr-2 h-4 w-4" />
-                  )}
+                <Button size="lg" onClick={handleCreatePost} disabled={isPosting || !newPostContent.trim()} className="rounded-xl px-5">
+                  {isPosting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                   发布日记
                 </Button>
               </div>
@@ -475,12 +487,11 @@ export function JournalFeed() {
           </div>
         </div>
       ) : (
-        <div className="rounded-3xl border border-white/20 bg-white/10 p-8 text-center backdrop-blur-md">
-          <p className="text-white/60">登录后即可发布日记</p>
+        <div className="sketch-surface p-8 text-center">
+          <p className="text-[rgb(var(--ink-muted-rgb))]">登录后即可发布日记</p>
         </div>
       )}
 
-      {/* 列表区域 */}
       <div className="flex-1 space-y-4 pb-4">
         {posts.map((post) => (
           <JournalItem
@@ -490,36 +501,29 @@ export function JournalFeed() {
             currentUserRole={sessionUser?.role}
             onUpdate={handlePostUpdate}
             onDelete={handlePostDelete}
-            onImagePreview={(url, alt) => setLightboxImage({ url, alt })}
+            onImagePreview={(url, alt) => openLightbox({ url, alt })}
             friendLookup={friendLookup}
           />
         ))}
 
-        {/* 无限滚动观察哨 */}
         <div ref={observerTarget} className="h-4 w-full" />
 
-        {loading && (
+        {loading ? (
           <div className="flex justify-center py-4">
-            <Loader2 className="h-6 w-6 animate-spin text-white/40" />
+            <Loader2 className="h-6 w-6 animate-spin text-[rgb(var(--ink-muted-rgb))]" />
           </div>
-        )}
+        ) : null}
 
-        {!loading && !nextCursor && posts.length > 0 && (
-          <div className="py-4 text-center text-xs text-white/30">
-            已经到底啦
-          </div>
-        )}
+        {!loading && !nextCursor && posts.length > 0 ? (
+          <div className="py-4 text-center text-xs text-[rgb(var(--ink-muted-rgb))]">已经看到最后一条了</div>
+        ) : null}
 
-        {!loading && posts.length === 0 && (
-          <div className="py-10 text-center text-white/40">暂无日记</div>
-        )}
+        {!loading && posts.length === 0 ? (
+          <div className="sketch-surface py-10 text-center text-[rgb(var(--ink-muted-rgb))]">暂时还没有日记</div>
+        ) : null}
       </div>
-      {lightboxImage && (
-        <ImageLightbox
-          image={lightboxImage}
-          onClose={() => setLightboxImage(null)}
-        />
-      )}
+
+      {lightboxImage ? <ImageLightbox image={lightboxImage} onClose={closeLightbox} /> : null}
     </div>
   );
 }
@@ -548,7 +552,11 @@ function JournalItem({
   const [comments, setComments] = useState<DbComment[]>(post.comments ?? []);
   const [loadingComments, setLoadingComments] = useState(false);
   const [commentContent, setCommentContent] = useState("");
-  const [replyTarget, setReplyTarget] = useState<{ parentId: string; targetUserId?: string; targetName?: string } | null>(null);
+  const [replyTarget, setReplyTarget] = useState<{
+    parentId: string;
+    targetUserId?: string;
+    targetName?: string;
+  } | null>(null);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
@@ -601,15 +609,13 @@ function JournalItem({
   const handleSaveEdit = async () => {
     if (!currentUserId || !editContent.trim()) return;
 
-    setIsSaving(true);
     try {
+      setIsSaving(true);
       const updated = await updateJournal(post.id, {
         authorId: currentUserId,
         content: editContent,
       });
-
-      const fullPost = { ...post, ...updated };
-      onUpdate?.(fullPost);
+      onUpdate?.({ ...post, ...updated });
       setIsEditing(false);
     } catch (error) {
       console.error("Failed to update post:", error);
@@ -642,15 +648,14 @@ function JournalItem({
   const handlePostComment = async () => {
     if (!currentUserId || !commentContent.trim()) return;
 
-    setSubmittingComment(true);
     try {
+      setSubmittingComment(true);
       await createComment(post.id, {
         authorId: currentUserId,
         content: commentContent,
         parentCommentId: replyTarget?.parentId,
         targetUserId: replyTarget?.targetUserId,
       });
-
       setCommentContent("");
       setReplyTarget(null);
       await refreshComments();
@@ -663,8 +668,7 @@ function JournalItem({
 
   const handleDeleteComment = async (commentId: string) => {
     if (!currentUserId) return;
-    const actorRole =
-      typeof currentUserRole === "number" ? currentUserRole.toString() : undefined;
+    const actorRole = typeof currentUserRole === "number" ? currentUserRole.toString() : undefined;
     try {
       await deleteComment(post.id, commentId, {
         actorId: currentUserId,
@@ -676,14 +680,13 @@ function JournalItem({
     }
   };
 
-  const commentPlaceholder = replyTarget
-    ? `回复 ${replyTarget.targetName} ...`
-    : "写下你的评论...";
+  const commentPlaceholder = replyTarget ? `回复 ${replyTarget.targetName}…` : "写下你的评论...";
 
   const renderComment = (comment: DbComment, depth = 0) => {
     const commentFriend =
       (comment.author_id && friendLookup[comment.author_id]) ||
       (comment.author?.id ? friendLookup[comment.author.id] : undefined);
+
     return (
       <div key={comment.id} className={cn("space-y-2", depth > 0 && "pl-6")}>
         <div
@@ -697,13 +700,13 @@ function JournalItem({
             }
           }}
           className={cn(
-            "group/comment flex gap-3 rounded-2xl border border-white/5 bg-black/15 p-3 transition hover:border-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/40",
-            depth > 0 && "bg-black/10",
+            "group/comment flex gap-3 rounded-2xl border-2 border-[rgb(var(--ink-rgb)/0.08)] bg-[rgb(var(--paper-card-rgb)/0.8)] p-3 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent-coral-rgb)/0.35)]",
+            depth > 0 && "bg-[rgb(var(--paper-soft-rgb)/0.82)]",
             currentUserId ? "cursor-pointer" : "cursor-default"
           )}
         >
           <UserHoverCard friend={commentFriend} author={comment.author}>
-            <Avatar className="h-8 w-8 border border-white/15">
+            <Avatar className="h-8 w-8 border-2 border-[rgb(var(--ink-rgb)/0.1)]">
               <AvatarImage src={comment.author?.avatar_url || undefined} />
               <AvatarFallback className="text-[10px]">
                 {comment.author?.display_name?.slice(0, 2) || "访客"}
@@ -712,40 +715,33 @@ function JournalItem({
           </UserHoverCard>
           <div className="flex-1 space-y-1">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
-                <span className="font-medium text-white">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-[rgb(var(--ink-muted-rgb))]">
+                <span className="font-medium text-foreground">
                   {comment.author?.display_name || "匿名用户"}
                 </span>
-                {comment.targetUser && (
-                  <span className="text-white/50">
-                    回复 <span className="text-white/80">@{comment.targetUser.display_name}</span>
+                {comment.targetUser ? (
+                  <span>
+                    回复 <span className="text-foreground">@{comment.targetUser.display_name}</span>
                   </span>
-                )}
-                <span className="text-[10px] uppercase tracking-[0.2em] text-white/30">
+                ) : null}
+                <span className="text-[10px] uppercase tracking-[0.2em]">
                   {new Date(comment.created_at).toLocaleString()}
                 </span>
               </div>
-              <div className="flex items-center gap-2 opacity-0 transition group-hover/comment:opacity-100">
-                {(currentUserId === comment.author_id || currentUserRole === 1) && (
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleDeleteComment(comment.id);
-                    }}
-                    className="text-white/30 hover:text-red-400"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
+              {(currentUserId === comment.author_id || currentUserRole === 1) && !comment.deleted_at ? (
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleDeleteComment(comment.id);
+                  }}
+                  className="text-[rgb(var(--ink-muted-rgb))] transition hover:text-[rgb(var(--accent-coral-rgb))]"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
             </div>
-            <p
-              className={cn(
-                "text-sm leading-relaxed text-white/80",
-                comment.deleted_at && "italic text-white/40"
-              )}
-            >
-              {comment.deleted_at ? "该评论已被删除" : comment.content}
+            <p className={cn("text-sm leading-7 text-foreground", comment.deleted_at && "italic text-[rgb(var(--ink-muted-rgb))]")}>
+              {comment.deleted_at ? "这条评论已被删除" : comment.content}
             </p>
           </div>
         </div>
@@ -757,97 +753,81 @@ function JournalItem({
   };
 
   return (
-    <Card className="group relative border-white/20 bg-white/10 p-6 transition-all hover:bg-white/15 hover:shadow-lg hover:shadow-white/5 backdrop-blur-md rounded-3xl">
+    <Card className="sketch-surface paper-texture border-[rgb(var(--ink-rgb)/0.14)] bg-[rgb(var(--paper-soft-rgb)/0.92)] p-6">
       <div className="flex gap-4">
         <UserHoverCard friend={authorFriend} author={post.author}>
-          <Avatar className="h-12 w-12 border border-white/30 shadow-sm">
+          <Avatar className="h-12 w-12 border-2 border-[rgb(var(--ink-rgb)/0.12)]">
             <AvatarImage src={post.author?.avatar_url || undefined} />
-            <AvatarFallback>{post.author?.display_name?.slice(0, 2) || "游客"}</AvatarFallback>
+            <AvatarFallback>{post.author?.display_name?.slice(0, 2) || "访客"}</AvatarFallback>
           </Avatar>
         </UserHoverCard>
-        <div className="flex-1 space-y-2">
-          <div className="flex items-center justify-between">
+
+        <div className="flex-1 space-y-3">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="font-bold text-white text-lg drop-shadow-sm">{post.author?.display_name || "Unknown"}</p>
-              <p className="text-xs text-white/50 font-medium">
-                {new Date(post.created_at).toLocaleString()}
-              </p>
+              <p className="text-lg font-semibold text-foreground">{post.author?.display_name || "Unknown"}</p>
+              <p className="text-xs text-[rgb(var(--ink-muted-rgb))]">{new Date(post.created_at).toLocaleString()}</p>
             </div>
-            {isAuthor && !isEditing && (
-              <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-white/40 hover:bg-white/10 hover:text-white rounded-full"
-                  onClick={() => setIsEditing(true)}
-                >
+            {isAuthor && !isEditing ? (
+              <div className="flex gap-2">
+                <Button variant="outline" size="icon" className="rounded-full" onClick={() => setIsEditing(true)}>
                   <Pencil className="h-4 w-4" />
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="icon"
-                  className="h-8 w-8 text-white/40 hover:bg-rose-500/20 hover:text-rose-400 rounded-full"
+                  className="rounded-full border-[rgb(var(--accent-coral-rgb)/0.3)] text-[rgb(var(--accent-coral-rgb))] hover:bg-[rgb(var(--accent-coral-rgb)/0.1)]"
                   onClick={handleDeletePost}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
-            )}
+            ) : null}
           </div>
 
           {isEditing ? (
-            <div className="space-y-3 pt-2">
-              <Textarea
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                className="min-h-[120px] rounded-xl border-white/20 bg-white/5 text-sm text-white focus-visible:ring-cyan-400/50"
-              />
+            <div className="space-y-3 pt-1">
+              <Textarea value={editContent} onChange={(event) => setEditContent(event.target.value)} className="min-h-[120px] rounded-xl text-sm" />
               <div className="flex justify-end gap-3">
                 <Button
                   size="sm"
-                  variant="ghost"
+                  variant="outline"
                   onClick={() => {
                     setIsEditing(false);
                     setEditContent(post.content);
                   }}
-                  className="h-8 text-xs text-white/60 hover:text-white rounded-lg"
                 >
                   <X className="mr-1 h-3 w-3" />
                   取消
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={handleSaveEdit}
-                  disabled={isSaving || !editContent.trim()}
-                  className="h-8 bg-cyan-500/20 text-xs text-cyan-300 hover:bg-cyan-500/30 rounded-lg border border-cyan-500/30"
-                >
-                  {isSaving ? (
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                  ) : (
-                    <Check className="mr-1 h-3 w-3" />
-                  )}
+                <Button size="sm" onClick={handleSaveEdit} disabled={isSaving || !editContent.trim()}>
+                  {isSaving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Check className="mr-1 h-3 w-3" />}
                   保存
                 </Button>
               </div>
             </div>
           ) : (
-            <p className="whitespace-pre-wrap text-base leading-relaxed text-white/90 font-medium">{post.content}</p>
+            <p className="whitespace-pre-wrap text-base leading-8 text-foreground">{post.content}</p>
           )}
 
-          {post.media && post.media.length > 0 && (
-            <div className={cn(
-              "mt-4 grid gap-3",
-              post.media.length === 1 ? "grid-cols-1 sm:max-w-[60%]" :
-                post.media.length === 2 || post.media.length === 4 ? "grid-cols-2 sm:max-w-[80%]" :
-                  "grid-cols-3"
-            )}>
+          {post.media && post.media.length > 0 ? (
+            <div
+              className={cn(
+                "mt-4 grid gap-3",
+                post.media.length === 1
+                  ? "grid-cols-1 sm:max-w-[60%]"
+                  : post.media.length === 2 || post.media.length === 4
+                    ? "grid-cols-2 sm:max-w-[80%]"
+                    : "grid-cols-3"
+              )}
+            >
               {post.media.map((media) => (
                 <button
                   key={media.id}
                   type="button"
                   onClick={() => onImagePreview?.(media.url, "日记图片")}
                   className={cn(
-                    "group relative overflow-hidden rounded-2xl border border-white/20 bg-white/5 outline-none transition focus-visible:ring-2 focus-visible:ring-cyan-400/60 shadow-sm",
+                    "group relative overflow-hidden rounded-2xl border-2 border-[rgb(var(--ink-rgb)/0.12)] bg-[rgb(var(--paper-card-rgb)/0.84)] outline-none transition focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent-coral-rgb)/0.35)] shadow-sm",
                     post.media!.length > 1 ? "aspect-square" : "w-full"
                   )}
                 >
@@ -856,7 +836,7 @@ function JournalItem({
                     src={media.url}
                     alt="日记图片"
                     className={cn(
-                      "h-full w-full transition duration-700 group-hover:scale-110",
+                      "h-full w-full transition duration-700 group-hover:scale-105",
                       post.media!.length === 1 ? "max-h-[500px] object-cover" : "object-cover"
                     )}
                     loading="lazy"
@@ -865,15 +845,17 @@ function JournalItem({
                 </button>
               ))}
             </div>
-          )}
+          ) : null}
 
           <div className="flex items-center gap-4 pt-4">
             <Button
               variant="ghost"
               size="sm"
               className={cn(
-                "h-9 gap-2 px-3 text-xs rounded-full border border-transparent hover:border-white/20 hover:bg-white/10 transition-all",
-                liked ? "text-rose-400 bg-rose-500/10 border-rose-500/20" : "text-white/60 hover:text-white"
+                "h-9 gap-2 rounded-full border-2 px-3 transition",
+                liked
+                  ? "border-[rgb(var(--accent-coral-rgb)/0.25)] bg-[rgb(var(--accent-rose-rgb)/0.14)] text-[rgb(var(--accent-coral-rgb))]"
+                  : "border-[rgb(var(--ink-rgb)/0.1)] bg-[rgb(var(--paper-card-rgb)/0.84)] text-[rgb(var(--ink-muted-rgb))] hover:text-foreground"
               )}
               onClick={handleLike}
               disabled={!currentUserId}
@@ -881,59 +863,58 @@ function JournalItem({
               <Heart className={cn("h-4 w-4", liked && "fill-current")} />
               {likeCount > 0 ? likeCount : "点赞"}
             </Button>
-            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-white/60">
+            <div className="sketch-pill flex items-center gap-2 px-4 py-1.5 text-xs text-[rgb(var(--ink-muted-rgb))]">
               <MessageSquare className="h-3.5 w-3.5" />
               {totalComments} 条评论
             </div>
           </div>
 
-          <div className="mt-6 space-y-4 border-t border-white/10 pt-6">
+          <div className="mt-6 space-y-4 border-t border-[rgb(var(--ink-rgb)/0.1)] pt-6">
             {loadingComments ? (
               <div className="flex justify-center py-4">
-                <Loader2 className="h-5 w-5 animate-spin text-white/40" />
+                <Loader2 className="h-5 w-5 animate-spin text-[rgb(var(--ink-muted-rgb))]" />
               </div>
             ) : comments.length > 0 ? (
               <div className="space-y-4">{comments.map((comment) => renderComment(comment))}</div>
             ) : (
-              <p className="text-center text-xs text-white/30 italic">暂无评论，快来抢沙发吧~</p>
+              <p className="text-center text-xs italic text-[rgb(var(--ink-muted-rgb))]">暂时没有评论，留下第一句吧。</p>
             )}
 
             {currentUserId ? (
               <div className="space-y-3 pt-2">
-                {replyTarget && (
-                  <div className="flex items-center justify-between rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-xs text-cyan-100 backdrop-blur-sm">
-                    <span>正在回复 <span className="font-bold">{replyTarget.targetName}</span></span>
+                {replyTarget ? (
+                  <div className="flex items-center justify-between rounded-xl border-2 border-[rgb(var(--accent-coral-rgb)/0.25)] bg-[rgb(var(--accent-rose-rgb)/0.12)] px-4 py-2 text-xs text-foreground">
+                    <span>
+                      正在回复 <span className="font-semibold">{replyTarget.targetName}</span>
+                    </span>
                     <button
                       onClick={() => setReplyTarget(null)}
-                      className="text-cyan-200 hover:text-white p-1 hover:bg-cyan-500/20 rounded-full transition"
+                      className="rounded-full p-1 text-[rgb(var(--ink-muted-rgb))] transition hover:bg-[rgb(var(--paper-soft-rgb)/0.8)] hover:text-foreground"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                )}
+                ) : null}
+
                 <div className="flex gap-3">
                   <Textarea
                     value={commentContent}
-                    onChange={(e) => setCommentContent(e.target.value)}
+                    onChange={(event) => setCommentContent(event.target.value)}
                     placeholder={commentPlaceholder}
-                    className="min-h-[44px] flex-1 resize-none rounded-xl border-white/20 bg-white/5 py-3 text-xs text-white placeholder:text-white/30 focus-visible:ring-cyan-400/50 transition-all"
+                    className="min-h-[44px] flex-1 resize-none rounded-xl py-3 text-xs"
                   />
                   <Button
                     size="icon"
-                    className="h-11 w-11 shrink-0 rounded-xl bg-white/10 hover:bg-cyan-500 hover:text-white border border-white/10 transition-all shadow-sm"
+                    className="h-11 w-11 shrink-0 rounded-xl"
                     onClick={handlePostComment}
                     disabled={submittingComment || !commentContent.trim()}
                   >
-                    {submittingComment ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Send className="h-5 w-5" />
-                    )}
+                    {submittingComment ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
                   </Button>
                 </div>
               </div>
             ) : (
-              <p className="text-center text-xs text-white/40 py-2">登录后即可参与评论</p>
+              <p className="py-2 text-center text-xs text-[rgb(var(--ink-muted-rgb))]">登录后即可参与评论</p>
             )}
           </div>
         </div>
@@ -950,17 +931,15 @@ function countCommentsRecursive(nodes: DbComment[] = []): number {
 }
 
 function ImageLightbox({ image, onClose }: { image: LightboxImage; onClose: () => void }) {
-  if (!image) return null;
-
   return (
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-[rgb(69_54_41/0.68)] p-6 backdrop-blur-sm"
       onClick={onClose}
     >
       <button
         type="button"
         onClick={onClose}
-        className="absolute right-6 top-6 rounded-full border border-white/20 bg-black/60 p-2 text-white hover:bg-black/80"
+        className="absolute right-6 top-6 rounded-full border-2 border-[rgb(var(--paper-soft-rgb)/0.6)] bg-[rgb(var(--paper-soft-rgb)/0.18)] p-2 text-[rgb(var(--paper-soft-rgb))] hover:bg-[rgb(var(--paper-soft-rgb)/0.28)]"
       >
         <X className="h-5 w-5" />
       </button>
@@ -968,7 +947,7 @@ function ImageLightbox({ image, onClose }: { image: LightboxImage; onClose: () =
       <img
         src={image.url}
         alt={image.alt || "图片预览"}
-        className="max-h-[85vh] max-w-[90vw] rounded-2xl border border-white/10 object-contain shadow-2xl"
+        className="max-h-[85vh] max-w-[90vw] rounded-[1.6rem] border-2 border-[rgb(var(--paper-soft-rgb)/0.4)] object-contain shadow-2xl"
         referrerPolicy="no-referrer"
         onClick={(event) => event.stopPropagation()}
       />

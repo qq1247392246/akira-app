@@ -654,24 +654,6 @@ function normalizeDateString(value: string): string {
   return date.toISOString().slice(0, 10);
 }
 
-function computeCurrentStreak(dateStrings: string[]): number {
-  if (!dateStrings.length) return 0;
-  const normalizedSet = new Set(dateStrings.map(normalizeDateString));
-  let streak = 0;
-  let cursor = normalizeDateString(new Date().toISOString());
-  while (normalizedSet.has(cursor)) {
-    streak += 1;
-    cursor = shiftDateString(cursor, -1);
-  }
-  return streak;
-}
-
-function shiftDateString(dateString: string, offsetDays: number): string {
-  const date = new Date(`${dateString}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + offsetDays);
-  return date.toISOString().slice(0, 10);
-}
-
 function startOfUtcDay(date: Date): Date {
   const clone = new Date(date);
   clone.setUTCHours(0, 0, 0, 0);
